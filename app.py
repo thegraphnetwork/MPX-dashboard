@@ -32,37 +32,33 @@ def load_data(nrows: Optional[int] = None, cols: Optional[list] = None, errors: 
             data[c] = pd.to_datetime(data[c], errors=errors) 
     return data 
 
-def ravg_edges(arr: np.ndarray, int_: int):
+def plot_daily(df: pd.DataFrame, key: str = 'only', min_int: int = 3,
+               max_int: int = 15, default: int = 7, win_type: Optional[str] = None):
     """
     Note
     ----
-    avoids issues at edges by progressively reducing the size of the average
-    interval near beginning and end.
-    It ensures, for instance, that ravg_edges(np.ones(N), int_) => np.ones(N)
+    Uses streamlit user input to further select the data and plots it.
+    
     Parameters
     ----------
-    arr: np.arr
-        the array to get the running average of
-    int_: int
-        the size of the running interval.
-    
+    df : pd.DataFrame
+        DataFrame with the data to plot
+    key : str, optional
+        Key for streamlit, avoid doubles. The default is 'only'.
+    min_int : int, optional
+        minimum value for rolling average. The default is 3.
+    max_int : int, optional
+        maximum value for rolling average. The default is 15.
+    default : int, optional
+        default value for rolling average number input. The default is 7.
+    win_type : Optional[str], optional
+        window type for rolling average. The default is None.
+
     Returns
     -------
-    np.arr
-        the running average
-    """
-    if not len(arr):
-        return np.array([])
-    ravg = np.convolve(arr, np.ones(int_)/int_, mode='same')
-    offset = int_ // 2
-    for o in range(offset):
-        ravg[o] = arr[:o+1].mean()
-    offset -= 0 if int_%2 == 1 else 1
-    for o in range(1, offset+1):
-        ravg[-o] = arr[-o:].mean()
-    return ravg
+    None.
 
-def plot_daily(df: pd.DataFrame, key: str = 'only', min_int: int = 3, max_int: int = 15, default: int = 7):
+    """
     if 'suspected' in df['Status'].values:
         status = st.selectbox('Cases to consider', ['Only confirmed', 'Confirmed and suspected'])
         filter_ = {'Only confirmed': ['confirmed'], 'Confirmed and suspected': ['confirmed', 'suspected']}[status]
@@ -71,19 +67,19 @@ def plot_daily(df: pd.DataFrame, key: str = 'only', min_int: int = 3, max_int: i
         selected = df[df['Status'] == 'confirmed']
     if len(selected):
         selected['Date'] = vdate_choice(selected['Date_confirmation'], selected['Date_entry'])
-        int_world = st.number_input('Running average interval', min_value=min_int, max_value=max_int, value=default, key=key)
+        int_ = st.number_input('Running average interval', min_value=min_int, max_value=max_int, value=default, key=key)
         
         gendered = st.checkbox('Divide by gender', key=f'gendered_{key}')
         try:
             data_to_plot = selected.set_index('Date')['ID'].resample('D').count()
-            ravg = ravg_edges(data_to_plot, int_world)
+            ravg = data_to_plot.rolling(int_, win_type=win_type).mean()
             fig = go.Figure()   
             fig.add_trace(go.Bar(x=data_to_plot.index, y=data_to_plot.values, marker_color='black', name='total cases (T)'))
             fig.add_trace(go.Scatter(x=data_to_plot.index, y=ravg, marker_color='black', name='running average (T)'))
             if gendered:
                 for g, colour in zip(['male', 'female'],['blue','pink']):
                     gender = selected[selected['Gender'] == g].set_index('Date')['ID'].resample('D').count()
-                    g_ravg = ravg_edges(gender, int_world)
+                    g_ravg = gender.rolling(int_, win_type=win_type).mean()
                     fig.add_trace(go.Bar(x=gender.index, y=gender.values, marker_color=colour, name=f'{g} cases ({g[0].upper()})'))
                     fig.add_trace(go.Scatter(x=gender.index, y=g_ravg, marker_color=colour, name=f'running average ({g[0].upper()})'))
             st.plotly_chart(fig, use_container_width=True)
@@ -118,12 +114,12 @@ if st.checkbox('Show all_cases'):
     st.dataframe(all_cases)
 
 st.markdown('## Cases globally')
-plot_daily(all_cases, key='world')
+plot_daily(all_cases, key='world', win_type='exponential')
 
 st.markdown('## Cases by country')
 country = st.selectbox('Select country', sorted(list(set(all_cases.Country))))
 country_cases = all_cases[all_cases.Country==country]
-plot_daily(country_cases, key='country')
+plot_daily(country_cases, key='country', win_type='exponential')
 
 
     
