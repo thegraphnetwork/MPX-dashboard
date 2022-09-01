@@ -32,7 +32,7 @@ def load_data(nrows: Optional[int] = None, cols: Optional[list] = None, errors: 
             data[c] = pd.to_datetime(data[c], errors=errors) 
     return data 
 
-def plot_daily(df: pd.DataFrame, key: str = 'only', min_int: int = 3,
+def plot_daily(df: pd.DataFrame, entrytype: str = "cases", key: str = 'only', min_int: int = 3,
                max_int: int = 15, default: int = 7, win_type: Optional[str] = None):
     """
     Note
@@ -43,6 +43,8 @@ def plot_daily(df: pd.DataFrame, key: str = 'only', min_int: int = 3,
     ----------
     df : pd.DataFrame
         DataFrame with the data to plot
+    entrytype: str
+        what the entries are (cases, deaths, ...)
     key : str, optional
         Key for streamlit, avoid doubles. The default is 'only'.
     min_int : int, optional
@@ -59,8 +61,9 @@ def plot_daily(df: pd.DataFrame, key: str = 'only', min_int: int = 3,
     None.
 
     """
+    
     if 'suspected' in df['Status'].values:
-        status = st.selectbox('Cases to consider', ['Only confirmed', 'Confirmed and suspected'])
+        status = st.selectbox(f'{entrytype} to consider', ['Only confirmed', 'Confirmed and suspected'])
         filter_ = {'Only confirmed': ['confirmed'], 'Confirmed and suspected': ['confirmed', 'suspected']}[status]
         selected= df[df['Status'].isin(filter_)]
     else:
@@ -74,13 +77,13 @@ def plot_daily(df: pd.DataFrame, key: str = 'only', min_int: int = 3,
             data_to_plot = selected.set_index('Date')['ID'].resample('D').count()
             ravg = data_to_plot.rolling(int_, win_type=win_type).mean()
             fig = go.Figure()   
-            fig.add_trace(go.Bar(x=data_to_plot.index, y=data_to_plot.values, marker_color='black', name='total cases (T)'))
+            fig.add_trace(go.Bar(x=data_to_plot.index, y=data_to_plot.values, marker_color='black', name=f'total {entrytype} (T)'))
             fig.add_trace(go.Scatter(x=data_to_plot.index, y=ravg, marker_color='black', name='running average (T)'))
             if gendered:
                 for g, colour in zip(['male', 'female'],['blue','pink']):
                     gender = selected[selected['Gender'] == g].set_index('Date')['ID'].resample('D').count()
                     g_ravg = gender.rolling(int_, win_type=win_type).mean()
-                    fig.add_trace(go.Bar(x=gender.index, y=gender.values, marker_color=colour, name=f'{g} cases ({g[0].upper()})'))
+                    fig.add_trace(go.Bar(x=gender.index, y=gender.values, marker_color=colour, name=f'{g} {entrytype} ({g[0].upper()})'))
                     fig.add_trace(go.Scatter(x=gender.index, y=g_ravg, marker_color=colour, name=f'running average ({g[0].upper()})'))
             st.plotly_chart(fig, use_container_width=True)
                     
@@ -88,7 +91,7 @@ def plot_daily(df: pd.DataFrame, key: str = 'only', min_int: int = 3,
             st.markdown(f'{e}')
             st.text(f'{traceback.format_exc()}')
     else:
-        st.markdown('No reported cases match the search criteria.')
+        st.markdown(f'No reported {entrytype} match the search criteria.')
             
 TITLE = 'Monkey Pox Evolution'
 st.set_page_config(page_title=TITLE,
@@ -106,7 +109,8 @@ LINELIST_URL = 'https://raw.githubusercontent.com/globaldothealth/monkeypox/main
 TS_URL = 'https://raw.githubusercontent.com/globaldothealth/monkeypox/main/timeseries-confirmed.csv'
 
 data_load_state = st.text('Loading data...')
-all_cases = load_data(cols=['ID', 'Status', 'Country', 'Gender', 'Date_confirmation', 'Date_entry', 'Symptoms'])
+# all_cases = load_data(cols=['ID', 'Status', 'Country', 'Gender', 'Date_confirmation', 'Date_entry', 'Symptoms'])
+all_cases = load_data(cols=None)
 data_load_state.text('Done!')
 
 if st.checkbox('Show all_cases'):
@@ -114,12 +118,16 @@ if st.checkbox('Show all_cases'):
     st.dataframe(all_cases)
 
 st.markdown('## Cases globally')
-plot_daily(all_cases, key='world', win_type='exponential')
+plot_daily(all_cases, entrytype="cases", key='cases_world', win_type='exponential')
+st.markdown('## Deaths globally')
+plot_daily(all_cases[all_cases["Date_death"].notna()], entrytype="deaths", key='deaths_world', win_type='exponential')
 
 st.markdown('## Cases by country')
 country = st.selectbox('Select country', sorted(list(set(all_cases.Country))))
 country_cases = all_cases[all_cases.Country==country]
-plot_daily(country_cases, key='country', win_type='exponential')
+plot_daily(country_cases, key='cases_country', win_type='exponential')
+st.markdown(f'### Deaths in {country}')
+plot_daily(country_cases[country_cases["Date_death"].notna()], entrytype="deaths", key='deaths_country', win_type='exponential')
 
 
     
