@@ -7,6 +7,7 @@ from typing import Optional#, Any, Union
 
 date_choice = lambda x, y: y if pd.isna(x) else y
 vdate_choice = np.vectorize(date_choice)
+# pd.options.plotting.backend = 'plotly'
 
 @st.cache(allow_output_mutation=True)
 def load_data(nrows: Optional[int] = None, cols: Optional[list] = None, errors: str = 'raise'):
@@ -32,9 +33,9 @@ def load_data(nrows: Optional[int] = None, cols: Optional[list] = None, errors: 
             data[c] = pd.to_datetime(data[c], errors=errors) 
     return data 
 
-def plot_daily(df: pd.DataFrame, entrytype: str = 'cases', key: str = 'only',
-               index_col: str = 'Date', min_int: int = 3, max_int: int = 15, 
-               default: int = 7, win_type: Optional[str] = None):
+def plot(df: pd.DataFrame, cumulative: bool = False, entrytype: str = 'cases',
+         key: str = 'only', index_col: str = 'Date', min_int: int = 3,
+         max_int: int = 15, default: int = 7, win_type: Optional[str] = None):
     """
     Note
     ----
@@ -44,6 +45,9 @@ def plot_daily(df: pd.DataFrame, entrytype: str = 'cases', key: str = 'only',
     ----------
     df : pd.DataFrame
         DataFrame with the data to plot
+    cumulative: bool
+        wheter to plot cumulative sum of entries. Default is False.
+        If True, arguments for rolling average are ignored.
     entrytype: str
         what the entries are (cases, deaths, ...)
     key : str, optional
@@ -73,21 +77,27 @@ def plot_daily(df: pd.DataFrame, entrytype: str = 'cases', key: str = 'only',
         selected = df[df['Status'] == 'confirmed']
     if len(selected):
         selected['Date'] = vdate_choice(selected['Date_confirmation'], selected['Date_entry'])
-        int_ = st.number_input('Running average interval', min_value=min_int, max_value=max_int, value=default, key=key)
-        
         gendered = st.checkbox('Divide by gender', key=f'gendered_{key}')
         try:
             data_to_plot = selected.set_index('Date')['ID'].resample('D').count()
-            ravg = data_to_plot.rolling(int_, win_type=win_type).mean()
             fig = go.Figure()   
-            fig.add_trace(go.Bar(x=data_to_plot.index, y=data_to_plot.values, marker_color='black', name=f'total {entrytype} (T)'))
-            fig.add_trace(go.Scatter(x=data_to_plot.index, y=ravg, marker_color='black', name='running average (T)'))
+            if cumulative:
+                data_to_plot = data_to_plot.cumsum()
+                fig.add_trace(go.Scatter(x=data_to_plot.index, y=data_to_plot.values, marker_color='black', name=f'cumulative total {entrytype} (T)'))
+            else:
+                int_ = st.number_input('Running average interval', min_value=min_int, max_value=max_int, value=default, key=key)
+                ravg = data_to_plot.rolling(int_, win_type=win_type).mean()
+                fig.add_trace(go.Bar(x=data_to_plot.index, y=data_to_plot.values, marker_color='black', name=f'total {entrytype} (T)'))
+                fig.add_trace(go.Scatter(x=data_to_plot.index, y=ravg, marker_color='black', name='running average (T)'))
             if gendered:
                 for g, colour in zip(['male', 'female'],['blue','pink']):
                     gender = selected[selected['Gender'] == g].set_index('Date')['ID'].resample('D').count()
-                    g_ravg = gender.rolling(int_, win_type=win_type).mean()
-                    fig.add_trace(go.Bar(x=gender.index, y=gender.values, marker_color=colour, name=f'{g} {entrytype} ({g[0].upper()})'))
-                    fig.add_trace(go.Scatter(x=gender.index, y=g_ravg, marker_color=colour, name=f'running average ({g[0].upper()})'))
+                    if cumulative:
+                        fig.add_trace(go.Scatter(x=gender.index, y=gender.values, marker_color=colour, name=f'cumulative {g} {entrytype} ({g[0].upper()})'))
+                    else:
+                        g_ravg = gender.rolling(int_, win_type=win_type).mean()
+                        fig.add_trace(go.Bar(x=gender.index, y=gender.values, marker_color=colour, name=f'{g} {entrytype} ({g[0].upper()})'))
+                        fig.add_trace(go.Scatter(x=gender.index, y=g_ravg, marker_color=colour, name=f'running average ({g[0].upper()})'))
             st.plotly_chart(fig, use_container_width=True)
                     
         except Exception as e:
@@ -121,18 +131,18 @@ if st.checkbox('Show all_cases'):
     st.dataframe(all_cases)
 
 st.markdown('## Cases globally')
-plot_daily(all_cases, entrytype='cases', key='cases_world', win_type='exponential')
+plot(all_cases, entrytype='cases', key='cases_world', win_type='exponential', cumulative=False)
 st.markdown('## Deaths globally')
-plot_daily(all_cases[all_cases['Date_death'].notna()], entrytype='deaths', 
-           index_col='Date_death', key='deaths_world', win_type='exponential')
+plot(all_cases[all_cases['Date_death'].notna()], entrytype='deaths', 
+           index_col='Date_death', key='deaths_world', win_type='exponential', cumulative=False)
 
 st.markdown('## Cases by country')
 country = st.selectbox('Select country', sorted(list(set(all_cases.Country))))
 country_cases = all_cases[all_cases.Country==country]
-plot_daily(country_cases, key='cases_country', win_type='exponential')
+plot(country_cases, key='cases_country', win_type='exponential', cumulative=False)
 st.markdown(f'### Deaths in {country}')
-plot_daily(country_cases[country_cases['Date_death'].notna()], entrytype='deaths',
-           index_col='Date_death', key='deaths_country', win_type='exponential')
+plot(country_cases[country_cases['Date_death'].notna()], entrytype='deaths',
+           index_col='Date_death', key='deaths_country', win_type='exponential', cumulative=False)
 
 
     
