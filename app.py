@@ -32,8 +32,9 @@ def load_data(nrows: Optional[int] = None, cols: Optional[list] = None, errors: 
             data[c] = pd.to_datetime(data[c], errors=errors) 
     return data 
 
-def plot_daily(df: pd.DataFrame, entrytype: str = "cases", key: str = 'only', min_int: int = 3,
-               max_int: int = 15, default: int = 7, win_type: Optional[str] = None):
+def plot_daily(df: pd.DataFrame, entrytype: str = 'cases', key: str = 'only',
+               index_col: str = 'Date', min_int: int = 3, max_int: int = 15, 
+               default: int = 7, win_type: Optional[str] = None):
     """
     Note
     ----
@@ -47,6 +48,8 @@ def plot_daily(df: pd.DataFrame, entrytype: str = "cases", key: str = 'only', mi
         what the entries are (cases, deaths, ...)
     key : str, optional
         Key for streamlit, avoid doubles. The default is 'only'.
+    index_col: str
+        column to use as x axes. Default is date_confirmation if available and date_entry otherwise
     min_int : int, optional
         minimum value for rolling average. The default is 3.
     max_int : int, optional
@@ -118,16 +121,18 @@ if st.checkbox('Show all_cases'):
     st.dataframe(all_cases)
 
 st.markdown('## Cases globally')
-plot_daily(all_cases, entrytype="cases", key='cases_world', win_type='exponential')
+plot_daily(all_cases, entrytype='cases', key='cases_world', win_type='exponential')
 st.markdown('## Deaths globally')
-plot_daily(all_cases[all_cases["Date_death"].notna()], entrytype="deaths", key='deaths_world', win_type='exponential')
+plot_daily(all_cases[all_cases['Date_death'].notna()], entrytype='deaths', 
+           index_col='Date_death', key='deaths_world', win_type='exponential')
 
 st.markdown('## Cases by country')
 country = st.selectbox('Select country', sorted(list(set(all_cases.Country))))
 country_cases = all_cases[all_cases.Country==country]
 plot_daily(country_cases, key='cases_country', win_type='exponential')
 st.markdown(f'### Deaths in {country}')
-plot_daily(country_cases[country_cases["Date_death"].notna()], entrytype="deaths", key='deaths_country', win_type='exponential')
+plot_daily(country_cases[country_cases['Date_death'].notna()], entrytype='deaths',
+           index_col='Date_death', key='deaths_country', win_type='exponential')
 
 
     
