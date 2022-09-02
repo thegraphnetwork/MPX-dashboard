@@ -105,7 +105,74 @@ def plot(df: pd.DataFrame, cumulative: bool = False, entrytype: str = 'cases',
             st.text(f'{traceback.format_exc()}')
     else:
         st.markdown(f'No reported {entrytype} match the search criteria.')
-            
+
+def plot_multiple(df: pd.DataFrame, values: list, column: str ='Country',
+         cumulative: bool = False, entrytype: str = 'cases', plot_world: bool = True,
+         key: str = 'only', index_col: str = 'Date', min_int: int = 3,
+         max_int: int = 15, default: int = 7, win_type: Optional[str] = None):
+    """
+    Note
+    ----
+    Uses streamlit user input to further select the data and plots it.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame with the data to plot
+    values : list
+        values to consider. For instance, countries to plot as individual lines
+    column: str
+        column for 'values'. Default is 'Country'
+    cumulative : bool
+        wheter to plot cumulative sum of entries. Default is False.
+        If True, arguments for rolling average are ignored.
+    entrytype: str
+        what the entries are (cases, deaths, ...)
+    key : str, optional
+        Key for streamlit, avoid doubles. The default is 'only'.
+    index_col: str
+        column to use as x axes. Default is date_confirmation if available and date_entry otherwise
+    min_int : int, optional
+        minimum value for rolling average. The default is 3.
+    max_int : int, optional
+        maximum value for rolling average. The default is 15.
+    default : int, optional
+        default value for rolling average number input. The default is 7.
+    win_type : Optional[str], optional
+        window type for rolling average. The default is None.
+
+    Returns
+    -------
+    None.
+
+    """
+    country_cases = all_cases if 'World' in values else df[all_cases[column].isin(values)]
+    
+    if 'suspected' in country_cases['Status'].values:
+        status = st.selectbox(f'{entrytype} to consider', ['Only confirmed', 'Confirmed and suspected'], key='multiple_sus')
+        filter_ = {'Only confirmed': ['confirmed'], 'Confirmed and suspected': ['confirmed', 'suspected']}[status]
+        selected= country_cases[country_cases['Status'].isin(filter_)]
+    else:
+        selected = country_cases[country_cases['Status'] == 'confirmed']
+    if len(selected):
+        if not cumulative:
+            int_ = st.number_input('Running average interval', min_value=min_int, max_value=max_int, value=default, key=key)
+        selected['Date'] = vdate_choice(selected['Date_confirmation'], selected['Date_entry'])
+        fig = go.Figure()  
+        for value in values:
+            print(value)
+            vals = selected[selected[column] == value] if value != 'World' else selected
+            data_to_plot = vals.set_index('Date')['ID'].resample('D').count()
+            if cumulative:
+                data_to_plot = data_to_plot.cumsum()
+                fig.add_trace(go.Scatter(x=data_to_plot.index, y=data_to_plot.values, name=f'{value}'))
+            else:
+                ravg = data_to_plot.rolling(int_, win_type=win_type).mean()
+                fig.add_trace(go.Scatter(x=data_to_plot.index, y=ravg, name=f'{value}'))
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.markdown(f'No reported {entrytype} match the search criteria.')
+        
 TITLE = 'Monkey Pox Evolution'
 st.set_page_config(page_title=TITLE,
                     page_icon=':chart:',
@@ -137,13 +204,17 @@ plot(all_cases[all_cases['Date_death'].notna()], entrytype='deaths',
            index_col='Date_death', key='deaths_world', win_type='exponential', cumulative=False)
 
 st.markdown('## Cases by country')
-country = st.selectbox('Select country', sorted(list(set(all_cases.Country))))
+all_countries = sorted(list(set(all_cases.Country)))
+country = st.selectbox('Select country', all_countries)
 country_cases = all_cases[all_cases.Country==country]
 plot(country_cases, key='cases_country', win_type='exponential', cumulative=False)
 st.markdown(f'### Deaths in {country}')
 plot(country_cases[country_cases['Date_death'].notna()], entrytype='deaths',
            index_col='Date_death', key='deaths_country', win_type='exponential', cumulative=False)
 
+st.markdown('## Compare countries')
+sel_countries = st.multiselect('Select countries to compare', all_countries + ['World'])
+plot_multiple(all_cases, sel_countries, cumulative=False, key='multiple')
 
     
 
