@@ -79,7 +79,7 @@ def plot(df: pd.DataFrame, cumulative: bool = False, entrytype: str = 'cases',
         selected['Date'] = vdate_choice(selected['Date_confirmation'], selected['Date_entry'])
         gendered = st.checkbox('Divide by gender', key=f'gendered_{key}')
         try:
-            data_to_plot = selected.set_index('Date')['ID'].resample('D').count()
+            data_to_plot = selected.set_index(index_col)['ID'].resample('D').count()
             fig = go.Figure()   
             if cumulative:
                 data_to_plot = data_to_plot.cumsum()
@@ -91,7 +91,7 @@ def plot(df: pd.DataFrame, cumulative: bool = False, entrytype: str = 'cases',
                 fig.add_trace(go.Scatter(x=data_to_plot.index, y=ravg, marker_color='black', name='running average (T)'))
             if gendered:
                 for g, colour in zip(['male', 'female'],['blue','pink']):
-                    gender = selected[selected['Gender'] == g].set_index('Date')['ID'].resample('D').count()
+                    gender = selected[selected['Gender'] == g].set_index(index_col)['ID'].resample('D').count()
                     if cumulative:
                         fig.add_trace(go.Scatter(x=gender.index, y=gender.values, marker_color=colour, name=f'cumulative {g} {entrytype} ({g[0].upper()})'))
                     else:
@@ -107,9 +107,11 @@ def plot(df: pd.DataFrame, cumulative: bool = False, entrytype: str = 'cases',
         st.markdown(f'No reported {entrytype} match the search criteria.')
 
 def plot_multiple(df: pd.DataFrame, values: list, column: str ='Country',
-         cumulative: bool = False, entrytype: str = 'cases', plot_world: bool = True,
-         key: str = 'only', index_col: str = 'Date', min_int: int = 3,
-         max_int: int = 15, default: int = 7, win_type: Optional[str] = None):
+         cumulative: bool = False, entrytype: str = 'cases', plot_tot: bool = False,
+         tot_label: str = 'World', plot_sumvals: bool = False, 
+         sumvals_label: str = 'Sum of selected countries', key: str = 'only',
+         index_col: str = 'Date', min_int: int = 3, max_int: int = 15,
+         default: int = 7, win_type: Optional[str] = None):
     """
     Note
     ----
@@ -128,6 +130,14 @@ def plot_multiple(df: pd.DataFrame, values: list, column: str ='Country',
         If True, arguments for rolling average are ignored.
     entrytype: str
         what the entries are (cases, deaths, ...)
+    plot_tot: bool
+        whether to plot the values from the whole dataframe (e.g. "World" if column=="Country", both genders if column="Gender")
+    tot_label: str
+        label for the "total" curve. Default
+    plot_sumvals: bool
+        whether to plot the sum of the selected values f(e.g. "England + Scotland + Wales")
+    sumvals_label: str
+        label for the "sum of selected values" curve. Default is "sum of selected countries"
     key : str, optional
         Key for streamlit, avoid doubles. The default is 'only'.
     index_col: str
@@ -146,33 +156,63 @@ def plot_multiple(df: pd.DataFrame, values: list, column: str ='Country',
     None.
 
     """
-    country_cases = all_cases if 'World' in values else df[all_cases[column].isin(values)]
+    values_cases = df if plot_tot else df[df[column].isin(values)]
     
-    if 'suspected' in country_cases['Status'].values:
+    if 'suspected' in values_cases['Status'].values:
         status = st.selectbox(f'{entrytype} to consider', ['Only confirmed', 'Confirmed and suspected'], key='multiple_sus')
         filter_ = {'Only confirmed': ['confirmed'], 'Confirmed and suspected': ['confirmed', 'suspected']}[status]
-        selected= country_cases[country_cases['Status'].isin(filter_)]
+        selected= values_cases[values_cases['Status'].isin(filter_)]
     else:
-        selected = country_cases[country_cases['Status'] == 'confirmed']
+        selected = values_cases[values_cases['Status'] == 'confirmed']
     if len(selected):
         if not cumulative:
             int_ = st.number_input('Running average interval', min_value=min_int, max_value=max_int, value=default, key=key)
         selected['Date'] = vdate_choice(selected['Date_confirmation'], selected['Date_entry'])
-        fig = go.Figure()  
-        for value in values:
-            print(value)
-            vals = selected[selected[column] == value] if value != 'World' else selected
-            data_to_plot = vals.set_index('Date')['ID'].resample('D').count()
-            if cumulative:
-                data_to_plot = data_to_plot.cumsum()
-                fig.add_trace(go.Scatter(x=data_to_plot.index, y=data_to_plot.values, name=f'{value}'))
-            else:
-                ravg = data_to_plot.rolling(int_, win_type=win_type).mean()
-                fig.add_trace(go.Scatter(x=data_to_plot.index, y=ravg, name=f'{value}'))
-        st.plotly_chart(fig, use_container_width=True)
+        if len(selected[index_col].dropna()):
+            fig = go.Figure()  
+            for value in values:
+                vals = selected[selected[column] == value]
+                data_to_plot = vals.set_index(index_col)['ID'].resample('D').count()
+                if cumulative:
+                    data_to_plot = data_to_plot.cumsum()
+                    fig.add_trace(go.Scatter(x=data_to_plot.index, y=data_to_plot.values, name=f'{value}'))
+                else:
+                    ravg = data_to_plot.rolling(int_, win_type=win_type).mean()
+                    fig.add_trace(go.Scatter(x=data_to_plot.index, y=ravg, name=f'{value}'))
+            if plot_tot:
+                data_to_plot = selected.set_index(index_col)['ID'].resample('D').count()
+                if cumulative:
+                    data_to_plot = data_to_plot.cumsum()
+                    fig.add_trace(go.Scatter(x=data_to_plot.index, y=data_to_plot.values, name=f'{tot_label}'))
+                else:
+                    ravg = data_to_plot.rolling(int_, win_type=win_type).mean()
+                    fig.add_trace(go.Scatter(x=data_to_plot.index, y=ravg, name=f'{tot_label}'))
+            if plot_sumvals:
+                vals =  selected[selected[column].isin(values)]
+                data_to_plot = vals.set_index(index_col)['ID'].resample('D').count()
+                if cumulative:
+                    data_to_plot = data_to_plot.cumsum()
+                    fig.add_trace(go.Scatter(x=data_to_plot.index, y=data_to_plot.values, name=f'{sumvals_label}'))
+                else:
+                    ravg = data_to_plot.rolling(int_, win_type=win_type).mean()
+                    fig.add_trace(go.Scatter(x=data_to_plot.index, y=ravg, name=f'{sumvals_label}'))
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.markdown(f'No reported {entrytype} match the search criteria.')
     else:
         st.markdown(f'No reported {entrytype} match the search criteria.')
-        
+    
+def plot_multiple_countries(df, cumulative=False,  key='multiple_countries', entrytype='cases', index_col='Date'):
+    all_countries = sorted(list(set(df.Country)))
+    sel_countries = st.multiselect('Select countries to compare', all_countries + ['World', 'Sum of selected'], key=f'sel_{key}')
+    plot_tot, plot_sumvals = 'World' in sel_countries, 'Sum of selected' in sel_countries
+    plot_multiple(df, [i for i in sel_countries if i not in ['World', 'Sum of selected']],
+                  cumulative=cumulative, key=key, plot_tot=plot_tot,
+                  plot_sumvals=plot_sumvals, tot_label='World',
+                  entrytype=entrytype, index_col=index_col, 
+                  sumvals_label='Sum of selected countries')
+    
+    
 TITLE = 'Monkey Pox Evolution'
 st.set_page_config(page_title=TITLE,
                     page_icon=':chart:',
@@ -189,8 +229,8 @@ LINELIST_URL = 'https://raw.githubusercontent.com/globaldothealth/monkeypox/main
 TS_URL = 'https://raw.githubusercontent.com/globaldothealth/monkeypox/main/timeseries-confirmed.csv'
 
 data_load_state = st.text('Loading data...')
-# all_cases = load_data(cols=['ID', 'Status', 'Country', 'Gender', 'Date_confirmation', 'Date_entry', 'Symptoms'])
-all_cases = load_data(cols=None)
+all_cases = load_data(cols=['ID', 'Status', 'Country', 'Gender', 'Date_confirmation', 'Date_entry', 'Date_death', 'Symptoms'])
+# all_cases = load_data(cols=None)
 data_load_state.text('Done!')
 
 if st.checkbox('Show all_cases'):
@@ -213,8 +253,12 @@ plot(country_cases[country_cases['Date_death'].notna()], entrytype='deaths',
            index_col='Date_death', key='deaths_country', win_type='exponential', cumulative=False)
 
 st.markdown('## Compare countries')
-sel_countries = st.multiselect('Select countries to compare', all_countries + ['World'])
-plot_multiple(all_cases, sel_countries, cumulative=False, key='multiple')
+st.markdown('## Cases')
+plot_multiple_countries(all_cases, cumulative=False,  key='multiple_countries_cases', entrytype='cases', index_col='Date')
+st.markdown('## Deaths')
+plot_multiple_countries(all_cases, cumulative=False,  key='multiple_countries_deaths', entrytype='deaths', index_col='Date_death')
+# sel_countries = st.multiselect('Select countries to compare', all_countries + ['World'])
+# plot_multiple(all_cases, sel_countries, cumulative=False, key='multiple')
 
     
 
