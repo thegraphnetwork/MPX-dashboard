@@ -189,7 +189,7 @@ def plot(df: pd.DataFrame, values: list = [], column: str ='Country',
     else:
         selected = values_cases[values_cases['Status'] == 'confirmed']
     if len(selected):
-        if not cumulative:
+        if not cumulative and rolling:
             int_ = st.number_input('Running average interval', min_value=min_int, max_value=max_int, value=default, key=key)
         selected['Date'] = vdate_choice(selected['Date_confirmation'], selected['Date_entry'])
         if len(selected[index_col].dropna()):
@@ -237,10 +237,14 @@ def plot(df: pd.DataFrame, values: list = [], column: str ='Country',
                         fig.add_trace(plotfunc(x=data_to_plot.index, y=data_to_plot.values, marker_color=colours[colour_index + n], opacity=0.75 if daily else 1, name=f'{value}'))
                     if rolling:
                         ravg = data_to_plot.rolling(int_, win_type=win_type).mean()
-                        fig.add_trace(go.Scatter(x=data_to_plot.index, y=ravg, marker_color=colours[colour_index + n], opacity=0.5, name=f'{value}, rolling average'))
+                        if ravg.notna().values.any():  # not to plot only nans
+                            fig.add_trace(go.Scatter(x=data_to_plot.index, y=ravg, marker_color=colours[colour_index + n], opacity=0.5, name=f'{value}, rolling average'))
             colour_index = n if values else 0
-            fig['data'][0]['showlegend'] = True
-            st.plotly_chart(fig, use_container_width=True)
+            if fig['data']:
+                fig['data'][0]['showlegend'] = True
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.markdown('Not enough data for rolling average')
         else:
             st.markdown(f'No reported {entrytype} match the search criteria.')
     else:
@@ -312,8 +316,8 @@ st.markdown('## Compare countries')
 st.markdown('## Cases')
 plot_countries(all_cases, cumulative=True,  key='countries_cases', daily=False)
 st.markdown('## Deaths')
-plot_countries(all_cases[all_cases['Date_death'].notna()], cumulative=True,  key='multiple_countries_deaths',
-                        daily=False, entrytype='deaths', index_col='Date_death')
+plot_countries(all_cases[all_cases['Date_death'].notna()], cumulative=False,  key='multiple_countries_deaths',
+                        daily=False, rolling=True, entrytype='deaths', index_col='Date_death')
 
     
 
