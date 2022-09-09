@@ -34,7 +34,38 @@ def load_data(nrows: Optional[int] = None, cols: Optional[list] = None, errors: 
             data[c] = pd.to_datetime(data[c], errors=errors) 
     return data 
 
-def get_colours(n):
+def na_percentage(df: pd.DataFrame):
+    """
+    df: pd.DataFrame
+        the dataframe to analyse
+    
+    Returns
+    -------
+    pd.DataFrame
+        contains the percentage of nan per column, omitting when 0%
+    """
+    count_na = lambda df, colname: len(df[df[colname].isna()])
+    tot = len(df)/100
+    dict_ = {}
+    for col in df.columns:
+        na_count = count_na(df, col)
+        if na_count:
+            dict_[col] =  na_count/tot
+    return pd.DataFrame(pd.Series(dict_, name='percentage_nans'))
+            
+def get_colours(n: int):
+    """
+    Parameters
+    ----------
+    n : int
+        the number of desired colours.
+
+    Returns
+    -------
+    list
+        list of at least n colours.
+
+    """
     if n < 10:
         return px.colors.qualitative.G10
     elif n < 24:
@@ -150,7 +181,7 @@ def plot(df: pd.DataFrame, values: list = [], column: str ='Country',
     daily: bool
         whether to plot daily cases. If also rolling, uses bars instead of line
     rolling: bool
-        whether to plot rolling average. 
+        whether to plot rolling average.  Default is True
     plot_tot: bool
         whether to plot the values from the whole dataframe (e.g. "World" if column=="Country", both genders if column="Gender")
     tot_label: str
@@ -195,11 +226,12 @@ def plot(df: pd.DataFrame, values: list = [], column: str ='Country',
         if len(selected[index_col].dropna()):
             fig = go.Figure()  
             plotfunc = go.Bar if daily and rolling else go.Scatter
+            ncurves = len(values) + 1 if plot_tot else 0 + 1 if plot_sumvals else 0
             if colours:
-                if len(colours) < len(values):
+                if len(colours) < ncurves:
                     raise ValueError('You did not provide enough colours for your data!')
             else:
-                colours = get_colours(len(values))
+                colours = get_colours(ncurves)
             colour_index = 0
             if plot_tot:
                 data_to_plot = selected.set_index(index_col)['ID'].resample('D').count()
@@ -227,7 +259,11 @@ def plot(df: pd.DataFrame, values: list = [], column: str ='Country',
                         fig.add_trace(go.Scatter(x=data_to_plot.index, y=ravg, marker_color=colours[colour_index], opacity=0.5, name=f'{sumvals_label}, rolling average'))
                 colour_index += 1
             for n,value in enumerate(values):
-                vals = selected[selected[column] == value]
+                if pd.isna(value):
+                    vals = selected[selected[column].isna()]
+                    st.dataframe(vals)
+                else:
+                    vals = selected[selected[column] == value]
                 data_to_plot = vals.set_index(index_col)['ID'].resample('D').count()
                 if cumulative:
                     data_to_plot = data_to_plot.cumsum()
@@ -239,7 +275,6 @@ def plot(df: pd.DataFrame, values: list = [], column: str ='Country',
                         ravg = data_to_plot.rolling(int_, win_type=win_type).mean()
                         if ravg.notna().values.any():  # not to plot only nans
                             fig.add_trace(go.Scatter(x=data_to_plot.index, y=ravg, marker_color=colours[colour_index + n], opacity=0.5, name=f'{value}, rolling average'))
-            colour_index = n if values else 0
             if fig['data']:
                 fig['data'][0]['showlegend'] = True
                 st.plotly_chart(fig, use_container_width=True)
@@ -250,22 +285,237 @@ def plot(df: pd.DataFrame, values: list = [], column: str ='Country',
     else:
         st.markdown(f'No reported {entrytype} match the search criteria.')
     
-def plot_countries(df, key='countries', **kwargs):
+def plot_countries(df: pd.DataFrame, key: str = 'countries', **kwargs):
+    """
+    Note
+    ----
+    Plots countries selected by the user
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Dataframe to start from.
+    key : str
+        A key for streamlit. The default is 'countries'.
+    **kwargs : 
+        Any other keyword argument for the generic plot function.
+
+    Returns
+    -------
+    None.
+
+    """
     all_countries = sorted(list(set(df['Country'])))
     sel_countries = st.multiselect('Select countries to compare', all_countries + ['World', 'Sum of selected'], key=f'sel_{key}')
     plot_tot, plot_sumvals = 'World' in sel_countries, 'Sum of selected' in sel_countries
-    plot(df, [i for i in sel_countries if i not in ['World', 'Sum of selected']],
+    plot(df, values=[i for i in sel_countries if i not in ['World', 'Sum of selected']],
                   key=key,plot_sumvals=plot_sumvals, tot_label='World', plot_tot=plot_tot,
                   sumvals_label='Sum of selected countries', **kwargs)
 
-def plot_tot(df, label='', entrytype='cases', key='tot', colour='black', cumulative=False, **kwargs):
+def plot_tot(df: pd.DataFrame, label: str = '', entrytype: str = 'cases', key: str = 'tot',
+             colour: str = 'black', cumulative: bool = False, **kwargs):
+    """
+    Note
+    ----
+    plots the whole dataframe according to the selection criteria
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Dataframe to start from.
+    label : str
+        The label for your single curve. The default is "daily"/"cumulative" entrytype.
+    entrytype : str
+        The type of entry. The default is 'cases'. Other possibilities include deaths, hospitalisations
+    key : str, optional
+        Key for streamlit. The default is 'tot'.
+    colour : str, optional
+        Colour for the curve. The default is 'black'.
+    cumulative : bool, optional
+        DESCRIPTION. The default is False.
+    **kwargs : 
+        Any other keyword argument for the generic plot function.
+
+    Returns
+    -------
+    None.
+
+    """
     if not label:
         label = f'{"cumulative" if cumulative else "daily"} {entrytype}' 
     plot(df, key=key, plot_tot=True, tot_label=label, colours=[colour], cumulative=cumulative, **kwargs)
     
-def plot_genders(df, key='genders', **kwargs):
-    plot(df, ['male', 'female'], key=key, column='Gender', plot_tot=True, tot_label='all cases', colours=['black', 'blue', 'pink'], **kwargs)
+def plot_genders(df: pd.DataFrame, key: str = 'genders', **kwargs):
+    """
+    Note
+    ----
+    Plots curves for each gender
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        the dataframe to start from.
+    key : str, optional
+        A key for streamlir. The default is 'genders'.
+    **kwargs : 
+        Any other keyword argument for the generic plot function.
+
+    Returns
+    -------
+    None.
+
+    """
+    plot(df, values=['male', 'female'], key=key, column='Gender', plot_tot=True, tot_label='all cases', colours=['black', 'blue', 'pink'], **kwargs)
     
+def plot_outcome(df: pd.DataFrame, include_nan: bool = True, key: str = 'outcome', **kwargs):
+    """
+    Note
+    ----
+    Plots the outcome of cases
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Dataframe to start from.
+    include_nan : bool
+        Whether to plot the nans. The default is True.
+    key : str
+        Key for streanlit. The default is 'outcome'.
+    **kwargs : 
+        Any other keyword argument for the generic plot function.
+
+    Returns
+    -------
+    None.
+
+    """
+    values = ["Death", "Recovered", np.nan] if include_nan else ["Death", "Recovered"]
+    plot(df, values=values, column='Outcome', cumulative=True, **kwargs)
+
+def plot_needed_hospital(df: pd.DataFrame, include_nan: bool = True, key: str = 'hospitalised', **kwargs):
+    """
+    Note
+    ----
+    Plots how many cases needed hospitalisation
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Dataframe to start from.
+    include_nan : bool
+        Whether to plot the nans. The default is True.
+    key : str
+        Key for streanlit. The default is 'outcome'.
+    **kwargs : 
+        Any other keyword argument for the generic plot function.
+
+    Returns
+    -------
+    None.
+
+    """
+    values = ["Y", "N", np.nan] if include_nan else ["Y", "N"]
+    plot(df, values=values, column='Outcome', cumulative=True, **kwargs)
+
+def barstack(df: pd.DataFrame, values: list = [], column: str ='Country',
+         cumulative: bool = False, entrytype: str = 'cases',
+         daily: bool = True, key: str = 'barstack',
+         index_col: str = 'Date',
+         colours: Optional[list] = None):
+    """
+    Note
+    ----
+    Uses streamlit user input to further select the data and plots it.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame with the data to plot
+    values : list
+        values to consider. For instance, countries to plot as individual lines. Default is [], for only total curve
+    column: str
+        column for 'values'. Default is 'Country'
+    cumulative : bool
+        wheter to plot cumulative sum of entries. Default is False.
+        If True, arguments for rolling average are ignored.
+    entrytype: str
+        what the entries are (cases, deaths, ...)
+    key : str, optional
+        Key for streamlit, avoid doubles. The default is 'only'.
+    index_col: str
+        column to use as x axes. Default is date_confirmation if available and date_entry otherwise
+    colours: list, optional
+        list of colours. For instance plotly.express.colors.qualitative.G10.
+        If None, combines plotly colours to get enough.
+
+    Returns
+    -------
+    None.
+
+    """
+    values_cases = df if plot_tot else df[df[column].isin(values)]
+    
+    if 'suspected' in values_cases['Status'].values:
+        status = st.selectbox(f'{entrytype} to consider', ['Only confirmed', 'Confirmed and suspected'], key=f'sus_{key}')
+        filter_ = {'Only confirmed': ['confirmed'], 'Confirmed and suspected': ['confirmed', 'suspected']}[status]
+        selected= values_cases[values_cases['Status'].isin(filter_)]
+    else:
+        selected = values_cases[values_cases['Status'] == 'confirmed']
+    if len(selected):
+        selected['Date'] = vdate_choice(selected['Date_confirmation'], selected['Date_entry'])
+        if len(selected[index_col].dropna()):
+            fig = go.Figure()  
+            if colours:
+                if len(colours) < len(values):
+                    raise ValueError('You did not provide enough colours for your data!')
+            else:
+                colours = get_colours(len(values))
+            for n,value in enumerate(values):
+                if pd.isna(value):
+                    vals = selected[selected[column].isna()]
+                    st.dataframe(vals)
+                else:
+                    vals = selected[selected[column] == value]
+                data_to_plot = vals.set_index(index_col)['ID'].resample('D').count()
+                if cumulative:
+                    data_to_plot = data_to_plot.cumsum()
+                    fig.add_trace(go.Bar(x=data_to_plot.index, y=data_to_plot.values, marker_color=colours[n], name=f'{value}'))
+                else:
+                    fig.add_trace(go.Bar(x=data_to_plot.index, y=data_to_plot.values, marker_color=colours[n], opacity=0.75 , name=f'{value}'))
+            if fig['data']:
+                fig['data'][0]['showlegend'] = True
+                fig.update_layout(barmode='stack')
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.markdown('Not enough data for rolling average')
+        else:
+            st.markdown(f'No reported {entrytype} match the search criteria.')
+    else:
+        st.markdown(f'No reported {entrytype} match the search criteria.')
+
+def barstack_countries(df: pd.DataFrame, key: str = 'barstack_countries', **kwargs):
+    """
+    Note
+    ----
+    Plots countries selected by the user
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Dataframe to start from.
+    key : str
+        A key for streamlit. The default is 'countries'.
+    **kwargs : 
+        Any other keyword argument for the generic plot function.
+
+    Returns
+    -------
+    None.
+
+    """
+    all_countries = sorted(list(set(df['Country'])))
+    sel_countries = st.multiselect('Select countries to compare', all_countries, key=f'sel_{key}')
+    barstack(df, values=sel_countries, key=key, **kwargs)
     
 TITLE = 'Monkey Pox Evolution'
 st.set_page_config(page_title=TITLE,
@@ -298,9 +548,9 @@ st.markdown('## Deaths globally')
 plot_tot(all_cases[all_cases['Date_death'].notna()], entrytype='deaths', 
             index_col='Date_death', key='deaths_world', cumulative=True)
 
-st.markdown('## Hospitalisations globally')
-plot_tot(all_cases[all_cases['Date_hospitalisation'].notna()], entrytype='hospitalisations', 
-            index_col='Date_hospitalisation', key='hospitalisations_world', cumulative=True)
+# st.markdown('## Hospitalisations globally')
+# plot_tot(all_cases[all_cases['Date_hospitalisation'].notna()], entrytype='hospitalisations', 
+#             index_col='Date_hospitalisation', key='hospitalisations_world', cumulative=True)
 
 st.markdown('## Cases by country')
 all_countries = sorted(list(set(all_cases['Country'])))
@@ -313,11 +563,14 @@ plot_tot(country_cases[country_cases['Date_death'].notna()], entrytype='deaths',
             index_col='Date_death', key='deaths_country', cumulative=True)
 
 st.markdown('## Compare countries')
-st.markdown('## Cases')
+st.markdown('### Cases')
 plot_countries(all_cases, cumulative=True,  key='countries_cases', daily=False)
-st.markdown('## Deaths')
+st.markdown('### Deaths')
 plot_countries(all_cases[all_cases['Date_death'].notna()], cumulative=False,  key='multiple_countries_deaths',
                         daily=False, rolling=True, entrytype='deaths', index_col='Date_death')
 
+st.markdown('## Barstacked')
+st.markdown('### Cases')
+barstack_countries(all_cases, cumulative=False,  key='barstack_countries')
     
 
