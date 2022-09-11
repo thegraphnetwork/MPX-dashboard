@@ -159,7 +159,7 @@ def plot(df: pd.DataFrame, values: list = [], column: str ='Country',
          sumvals_label: str = 'Sum of selected countries', key: str = 'only',
          index_col: str = 'Date', min_int: int = 3, max_int: int = 15,
          default: int = 7, win_type: Optional[str] = None,
-         colours: Optional[list] = None):
+         colours: Optional[list] = None, st_columns: list = []):
     """
     Note
     ----
@@ -205,23 +205,32 @@ def plot(df: pd.DataFrame, values: list = [], column: str ='Country',
     colours: list, optional
         list of colours. For instance plotly.express.colors.qualitative.G10.
         If None, combines plotly colours to get enough.
-
+    st_columns: list, optional
+        list of streamlit columns. If [], creates 2 columns.
+        Provide empty columns, or all columns, if others are already used.
+        
     Returns
     -------
     None.
 
     """
+    if not st_columns:
+        st_columns = st.columns(2)
+    i_col = -2
     values_cases = df if plot_tot else df[df[column].isin(values)]
     
     if 'suspected' in values_cases['Status'].values:
-        status = st.selectbox(f'{entrytype} to consider', ['Only confirmed', 'Confirmed and suspected'], key=f'sus_{key}')
+        with st_columns[i_col]:
+            status = st.selectbox(f'{entrytype} to consider', ['Only confirmed', 'Confirmed and suspected'], key=f'sus_{key}')
+        i_col += 1
         filter_ = {'Only confirmed': ['confirmed'], 'Confirmed and suspected': ['confirmed', 'suspected']}[status]
         selected= values_cases[values_cases['Status'].isin(filter_)]
     else:
         selected = values_cases[values_cases['Status'] == 'confirmed']
     if len(selected):
         if not cumulative and rolling:
-            int_ = st.number_input('Running average interval', min_value=min_int, max_value=max_int, value=default, key=key)
+            with st_columns[i_col]:
+                int_ = st.number_input('Running average interval', min_value=min_int, max_value=max_int, value=default, key=key)
         selected['Date'] = vdate_choice(selected['Date_confirmation'], selected['Date_entry'])
         if len(selected[index_col].dropna()):
             fig = go.Figure()  
@@ -261,7 +270,6 @@ def plot(df: pd.DataFrame, values: list = [], column: str ='Country',
             for n,value in enumerate(values):
                 if pd.isna(value):
                     vals = selected[selected[column].isna()]
-                    st.dataframe(vals)
                 else:
                     vals = selected[selected[column] == value]
                 data_to_plot = vals.set_index(index_col)['ID'].resample('D').count()
@@ -306,11 +314,13 @@ def plot_countries(df: pd.DataFrame, key: str = 'countries', **kwargs):
 
     """
     all_countries = sorted(list(set(df['Country'])))
-    sel_countries = st.multiselect('Select countries to compare', all_countries + ['World', 'Sum of selected'], key=f'sel_{key}')
+    st_columns = st.columns(3)
+    with st_columns[0]:
+        sel_countries = st.multiselect('Select countries to compare', all_countries + ['World', 'Sum of selected'], key=f'sel_{key}')
     plot_tot, plot_sumvals = 'World' in sel_countries, 'Sum of selected' in sel_countries
     plot(df, values=[i for i in sel_countries if i not in ['World', 'Sum of selected']],
                   key=key,plot_sumvals=plot_sumvals, tot_label='World', plot_tot=plot_tot,
-                  sumvals_label='Sum of selected countries', **kwargs)
+                  sumvals_label='Sum of selected countries', st_columns=st_columns[-2:], **kwargs)
 
 def plot_tot(df: pd.DataFrame, label: str = '', entrytype: str = 'cases', key: str = 'tot',
              colour: str = 'black', cumulative: bool = False, **kwargs):
@@ -421,7 +431,7 @@ def barstack(df: pd.DataFrame, values: list = [], column: str ='Country',
          cumulative: bool = False, entrytype: str = 'cases',
          daily: bool = True, key: str = 'barstack',
          index_col: str = 'Date',
-         colours: Optional[list] = None):
+         colours: Optional[list] = None, st_columns: list = []):
     """
     Note
     ----
@@ -447,16 +457,23 @@ def barstack(df: pd.DataFrame, values: list = [], column: str ='Country',
     colours: list, optional
         list of colours. For instance plotly.express.colors.qualitative.G10.
         If None, combines plotly colours to get enough.
-
+    st_columns: list, optional
+        list of streamlit columns. If [], creates 2 columns.
+        Provide empty columns, or all columns, if others are already used.
+    
     Returns
     -------
     None.
 
     """
+    if not st_columns:
+        st_columns = st.columns(2)
+    i_col = -2
     values_cases = df if plot_tot else df[df[column].isin(values)]
     
     if 'suspected' in values_cases['Status'].values:
-        status = st.selectbox(f'{entrytype} to consider', ['Only confirmed', 'Confirmed and suspected'], key=f'sus_{key}')
+        with st_columns[i_col]:
+            status = st.selectbox(f'{entrytype} to consider', ['Only confirmed', 'Confirmed and suspected'], key=f'sus_{key}')
         filter_ = {'Only confirmed': ['confirmed'], 'Confirmed and suspected': ['confirmed', 'suspected']}[status]
         selected= values_cases[values_cases['Status'].isin(filter_)]
     else:
@@ -473,7 +490,6 @@ def barstack(df: pd.DataFrame, values: list = [], column: str ='Country',
             for n,value in enumerate(values):
                 if pd.isna(value):
                     vals = selected[selected[column].isna()]
-                    st.dataframe(vals)
                 else:
                     vals = selected[selected[column] == value]
                 data_to_plot = vals.set_index(index_col)['ID'].resample('D').count()
@@ -514,8 +530,10 @@ def barstack_countries(df: pd.DataFrame, key: str = 'barstack_countries', **kwar
 
     """
     all_countries = sorted(list(set(df['Country'])))
-    sel_countries = st.multiselect('Select countries to compare', all_countries, key=f'sel_{key}')
-    barstack(df, values=sel_countries, key=key, **kwargs)
+    st_columns = st.columns(3)
+    with st_columns[0]:
+        sel_countries = st.multiselect('Select countries to compare', all_countries, key=f'sel_{key}')
+    barstack(df, values=sel_countries, key=key, st_columns=st_columns[-2:], **kwargs)
     
 TITLE = 'Monkey Pox Evolution'
 st.set_page_config(page_title=TITLE,
@@ -535,42 +553,47 @@ TS_URL = 'https://raw.githubusercontent.com/globaldothealth/monkeypox/main/times
 data_load_state = st.text('Loading data...')
 # all_cases = load_data(cols=['ID', 'Status', 'Country', 'Gender', 'Date_confirmation', 'Date_entry', 'Date_death', 'Symptoms'])
 all_cases = load_data(cols=None)
-data_load_state.text('Done!')
+data_load_state.text('Data loaded!')
 
-if st.checkbox('Show all_cases'):
-    st.subheader('Linelist data')
-    st.dataframe(all_cases)
-
-st.markdown('## Cases globally')
-plot_tot(all_cases, entrytype='cases', key='cases_world', cumulative=True)
-
-st.markdown('## Deaths globally')
-plot_tot(all_cases[all_cases['Date_death'].notna()], entrytype='deaths', 
-            index_col='Date_death', key='deaths_world', cumulative=True)
-
-# st.markdown('## Hospitalisations globally')
-# plot_tot(all_cases[all_cases['Date_hospitalisation'].notna()], entrytype='hospitalisations', 
-#             index_col='Date_hospitalisation', key='hospitalisations_world', cumulative=True)
-
-st.markdown('## Cases by country')
-all_countries = sorted(list(set(all_cases['Country'])))
-country = st.selectbox('Select country', all_countries)
-country_cases = all_cases[all_cases['Country'] == country]
-plot_tot(country_cases, key='cases_country', cumulative=True)
-
-st.markdown(f'### Deaths in {country}')
-plot_tot(country_cases[country_cases['Date_death'].notna()], entrytype='deaths',
-            index_col='Date_death', key='deaths_country', cumulative=True)
-
-st.markdown('## Compare countries')
-st.markdown('### Cases')
-plot_countries(all_cases, cumulative=True,  key='countries_cases', daily=False)
-st.markdown('### Deaths')
-plot_countries(all_cases[all_cases['Date_death'].notna()], cumulative=False,  key='multiple_countries_deaths',
-                        daily=False, rolling=True, entrytype='deaths', index_col='Date_death')
-
-st.markdown('## Barstacked')
-st.markdown('### Cases')
-barstack_countries(all_cases, cumulative=False,  key='barstack_countries')
+# if st.checkbox('Show all_cases'):
+#     st.subheader('Linelist data')
+#     st.dataframe(all_cases)
+world_tab, country_tab, comparison_tab = st.tabs(['Global', 'Country', 'Compare'])
+with world_tab:
+    st.markdown('## Cases globally')
+    plot_tot(all_cases, entrytype='cases', key='cases_world', cumulative=False)
     
+    st.markdown('## Deaths globally')
+    plot_tot(all_cases[all_cases['Date_death'].notna()], entrytype='deaths', 
+                index_col='Date_death', key='deaths_world', cumulative=False)
+    
+    # st.markdown('## Hospitalisations globally')
+    # plot_tot(all_cases[all_cases['Date_hospitalisation'].notna()], entrytype='hospitalisations', 
+    #             index_col='Date_hospitalisation', key='hospitalisations_world', cumulative=False)
+
+with country_tab:
+    st.markdown('## Cases by country')
+    all_countries = sorted(list(set(all_cases['Country'])))
+    country = st.selectbox('Select country', all_countries)
+    country_cases = all_cases[all_cases['Country'] == country]
+    plot_tot(country_cases, key='cases_country', cumulative=False)
+    
+    st.markdown(f'### Deaths in {country}')
+    plot_tot(country_cases[country_cases['Date_death'].notna()], entrytype='deaths',
+                index_col='Date_death', key='deaths_country', cumulative=False)
+
+with comparison_tab:
+    st.markdown('## Compare countries')
+    st.markdown('### Cases')
+    plot_countries(all_cases, cumulative=False,  key='countries_cases', daily=False)
+    st.markdown('### Deaths')
+    plot_countries(all_cases[all_cases['Date_death'].notna()], cumulative=False,  key='multiple_countries_deaths',
+                            daily=False, rolling=True, entrytype='deaths', index_col='Date_death')
+    
+    st.markdown('## Barstacked')
+    st.markdown('### Cases')
+    barstack_countries(all_cases, cumulative=True,  key='barstack_countries')
+
+
+
 
