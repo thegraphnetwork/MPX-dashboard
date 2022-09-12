@@ -131,10 +131,10 @@ def get_colours(n: int):
 #                 data_to_plot = data_to_plot.cumsum()
 #                 fig.add_trace(go.Scatter(x=data_to_plot.index, y=data_to_plot.values, marker_color='black', name=f'cumulative total {entrytype} (T)'))
 #             else:
-#                 int_ = st.number_input('Running average interval', min_value=min_int, max_value=max_int, value=default, key=key)
+#                 int_ = st.number_input('Rolling average interval', min_value=min_int, max_value=max_int, value=default, key=key)
 #                 ravg = data_to_plot.rolling(int_, win_type=win_type).mean()
 #                 fig.add_trace(go.Bar(x=data_to_plot.index, y=data_to_plot.values, marker_color='black', opacity=0.75, name=f'total {entrytype} (T)'))
-#                 fig.add_trace(go.Scatter(x=data_to_plot.index, y=ravg, marker_color='black', opacity=0.5, name='running average (T)'))
+#                 fig.add_trace(go.Scatter(x=data_to_plot.index, y=ravg, marker_color='black', opacity=0.5, name='Rolling average (T)'))
 #             if gendered:
 #                 for g, colour in zip(['male', 'female'],['blue','pink']):
 #                     gender = selected[selected['Gender'] == g].set_index(index_col)['ID'].resample('D').count()
@@ -143,7 +143,7 @@ def get_colours(n: int):
 #                     else:
 #                         g_ravg = gender.rolling(int_, win_type=win_type).mean()
 #                         fig.add_trace(go.Bar(x=gender.index, y=gender.values, marker_color=colour, opacity=0.75, name=f'{g} {entrytype} ({g[0].upper()})'))
-#                         fig.add_trace(go.Scatter(x=gender.index, y=g_ravg, marker_color=colour, opacity=0.5, name=f'running average ({g[0].upper()})'))
+#                         fig.add_trace(go.Scatter(x=gender.index, y=g_ravg, marker_color=colour, opacity=0.5, name=f'Rolling average ({g[0].upper()})'))
 #             st.plotly_chart(fig, use_container_width=True)
                     
 #         except Exception as e:
@@ -153,12 +153,12 @@ def get_colours(n: int):
 #         st.markdown(f'No reported {entrytype} match the search criteria.')
 
 def plot(df: pd.DataFrame, values: list = [], column: str ='Country',
-         cumulative: bool = False, entrytype: str = 'cases',
-         daily: bool = True, rolling: bool = True, plot_tot: bool = False,
-         tot_label: str = 'World', plot_sumvals: bool = False, 
-         sumvals_label: str = 'Sum of selected countries', key: str = 'only',
-         index_col: str = 'Date', min_int: int = 3, max_int: int = 15,
-         default: int = 7, win_type: Optional[str] = None,
+         cumulative: Optional[bool] = None, entrytype: str = 'cases',
+         daily: Optional[bool] = None, rolling: Optional[bool] = None,
+         plot_tot: bool = False, tot_label: str = 'World',
+         plot_sumvals: bool = False, sumvals_label: str = 'Sum of selected countries',
+         key: str = 'only', index_col: str = 'Date', min_int: int = 3,
+         max_int: int = 15, default: int = 7, win_type: Optional[str] = None,
          colours: Optional[list] = None, st_columns: list = []):
     """
     Note
@@ -173,15 +173,15 @@ def plot(df: pd.DataFrame, values: list = [], column: str ='Country',
         values to consider. For instance, countries to plot as individual lines. Default is [], for only total curve
     column: str
         column for 'values'. Default is 'Country'
-    cumulative : bool
-        wheter to plot cumulative sum of entries. Default is False.
+    cumulative : bool, optional
+        wheter to plot cumulative sum of entries. Default is None. In such case, a user input is used.
         If True, arguments for rolling average are ignored.
     entrytype: str
         what the entries are (cases, deaths, ...)
-    daily: bool
-        whether to plot daily cases. If also rolling, uses bars instead of line
-    rolling: bool
-        whether to plot rolling average.  Default is True
+    daily: bool, optional
+        whether to plot daily cases. If also rolling, uses bars instead of line. Default is None. In such case, a user input is used.
+    rolling: bool, optional
+        whether to plot rolling average. Default is None. In such case, a user input is used.
     plot_tot: bool
         whether to plot the values from the whole dataframe (e.g. "World" if column=="Country", both genders if column="Gender")
     tot_label: str
@@ -215,8 +215,8 @@ def plot(df: pd.DataFrame, values: list = [], column: str ='Country',
 
     """
     if not st_columns:
-        st_columns = st.columns(2)
-    i_col = -2
+        st_columns = st.columns(3)
+    i_col = -3
     values_cases = df if plot_tot else df[df[column].isin(values)]
     
     if 'suspected' in values_cases['Status'].values:
@@ -228,9 +228,19 @@ def plot(df: pd.DataFrame, values: list = [], column: str ='Country',
     else:
         selected = values_cases[values_cases['Status'] == 'confirmed']
     if len(selected):
+        if (daily, rolling) == (None, None):
+                if cumulative == None:
+                    cumulative = st_columns[i_col].checkbox('Cumulative', key=f'cumul_{key}')
+                daily = st_columns[i_col].checkbox('Daily', key=f'daily_{key}',
+                                                   value=True if not cumulative else False,
+                                                   disabled=True if cumulative else False)
+                i_col += 1
+                rolling = st_columns[i_col].checkbox('Rolling average',
+                                                     key=f'rolling_{key}',
+                                                     disabled=True if cumulative else False)
         if not cumulative and rolling:
             with st_columns[i_col]:
-                int_ = st.number_input('Running average interval', min_value=min_int, max_value=max_int, value=default, key=key)
+                int_ = st.number_input('Rolling average interval', min_value=min_int, max_value=max_int, value=default, key=key)
         selected['Date'] = vdate_choice(selected['Date_confirmation'], selected['Date_entry'])
         if len(selected[index_col].dropna()):
             fig = go.Figure()  
@@ -293,7 +303,9 @@ def plot(df: pd.DataFrame, values: list = [], column: str ='Country',
     else:
         st.markdown(f'No reported {entrytype} match the search criteria.')
     
-def plot_countries(df: pd.DataFrame, key: str = 'countries', **kwargs):
+def plot_countries(df: pd.DataFrame, key: str = 'countries',
+                   cumulative: Optional[bool] = None, daily: Optional[bool] = None,
+                   rolling: Optional[bool] = None, **kwargs):
     """
     Note
     ----
@@ -305,6 +317,15 @@ def plot_countries(df: pd.DataFrame, key: str = 'countries', **kwargs):
         Dataframe to start from.
     key : str
         A key for streamlit. The default is 'countries'.
+    cumulative : bool, optional
+        wheter to plot cumulative sum of entries. Default is None. In such case, a user input is used.
+        If True, arguments for rolling average are ignored.
+    entrytype: str
+        what the entries are (cases, deaths, ...)
+    daily: bool, optional
+        whether to plot daily cases. If also rolling, uses bars instead of line. Default is None. In such case, a user input is used.
+    rolling: bool, optional
+        whether to plot rolling average. Default is None. In such case, a user input is used.
     **kwargs : 
         Any other keyword argument for the generic plot function.
 
@@ -314,16 +335,19 @@ def plot_countries(df: pd.DataFrame, key: str = 'countries', **kwargs):
 
     """
     all_countries = sorted(list(set(df['Country'])))
-    st_columns = st.columns(3)
+    st_columns = st.columns(4)
     with st_columns[0]:
         sel_countries = st.multiselect('Select countries to compare', all_countries + ['World', 'Sum of selected'], key=f'sel_{key}')
     plot_tot, plot_sumvals = 'World' in sel_countries, 'Sum of selected' in sel_countries
     plot(df, values=[i for i in sel_countries if i not in ['World', 'Sum of selected']],
                   key=key,plot_sumvals=plot_sumvals, tot_label='World', plot_tot=plot_tot,
-                  sumvals_label='Sum of selected countries', st_columns=st_columns[-2:], **kwargs)
+                  sumvals_label='Sum of selected countries', st_columns=st_columns[-3:],
+                  cumulative=cumulative, daily=daily, rolling=rolling, **kwargs)
 
 def plot_tot(df: pd.DataFrame, label: str = '', entrytype: str = 'cases', key: str = 'tot',
-             colour: str = 'black', cumulative: bool = False, **kwargs):
+             colour: str = 'black', cumulative: Optional[bool] = None, 
+             daily: Optional[bool] = None, rolling: Optional[bool] = None, **kwargs):
+    
     """
     Note
     ----
@@ -342,7 +366,12 @@ def plot_tot(df: pd.DataFrame, label: str = '', entrytype: str = 'cases', key: s
     colour : str, optional
         Colour for the curve. The default is 'black'.
     cumulative : bool, optional
-        DESCRIPTION. The default is False.
+        wheter to plot cumulative sum of entries. Default is None. In such case, a user input is used.
+        If True, arguments for rolling average are ignored.
+    daily: bool, optional
+        whether to plot daily cases. If also rolling, uses bars instead of line. Default is None. In such case, a user input is used.
+    rolling: bool, optional
+        whether to plot rolling average. Default is None. In such case, a user input is used.
     **kwargs : 
         Any other keyword argument for the generic plot function.
 
@@ -353,9 +382,11 @@ def plot_tot(df: pd.DataFrame, label: str = '', entrytype: str = 'cases', key: s
     """
     if not label:
         label = f'{"cumulative" if cumulative else "daily"} {entrytype}' 
-    plot(df, key=key, plot_tot=True, tot_label=label, colours=[colour], cumulative=cumulative, **kwargs)
+    plot(df, key=key, plot_tot=True, tot_label=label, colours=[colour],
+         entrytype=entrytype, cumulative=cumulative, daily=daily, rolling=rolling, **kwargs)
     
-def plot_genders(df: pd.DataFrame, key: str = 'genders', **kwargs):
+def plot_genders(df: pd.DataFrame, key: str = 'genders', cumulative: Optional[bool] = None,
+                 daily: Optional[bool] = None, rolling: Optional[bool] = None, **kwargs):
     """
     Note
     ----
@@ -367,6 +398,13 @@ def plot_genders(df: pd.DataFrame, key: str = 'genders', **kwargs):
         the dataframe to start from.
     key : str, optional
         A key for streamlir. The default is 'genders'.
+    cumulative : bool, optional
+        wheter to plot cumulative sum of entries. Default is None. In such case, a user input is used.
+        If True, arguments for rolling average are ignored.
+    daily: bool, optional
+        whether to plot daily cases. If also rolling, uses bars instead of line. Default is None. In such case, a user input is used.
+    rolling: bool, optional
+        whether to plot rolling average. Default is None. In such case, a user input is used.
     **kwargs : 
         Any other keyword argument for the generic plot function.
 
@@ -375,7 +413,9 @@ def plot_genders(df: pd.DataFrame, key: str = 'genders', **kwargs):
     None.
 
     """
-    plot(df, values=['male', 'female'], key=key, column='Gender', plot_tot=True, tot_label='all cases', colours=['black', 'blue', 'pink'], **kwargs)
+    plot(df, values=['male', 'female'], key=key, column='Gender', plot_tot=True,
+         cumulative=cumulative, daily=daily, rolling=rolling, tot_label='all cases',
+         colours=['black', 'blue', 'pink'], **kwargs)
     
 def plot_outcome(df: pd.DataFrame, include_nan: bool = True, key: str = 'outcome', **kwargs):
     """
@@ -428,7 +468,7 @@ def plot_needed_hospital(df: pd.DataFrame, include_nan: bool = True, key: str = 
     plot(df, values=values, column='Outcome', cumulative=True, **kwargs)
 
 def barstack(df: pd.DataFrame, values: list = [], column: str ='Country',
-         cumulative: bool = False, entrytype: str = 'cases',
+         cumulative: Optional[bool] = None, entrytype: str = 'cases',
          daily: bool = True, key: str = 'barstack',
          index_col: str = 'Date',
          colours: Optional[list] = None, st_columns: list = []):
@@ -445,8 +485,8 @@ def barstack(df: pd.DataFrame, values: list = [], column: str ='Country',
         values to consider. For instance, countries to plot as individual lines. Default is [], for only total curve
     column: str
         column for 'values'. Default is 'Country'
-    cumulative : bool
-        wheter to plot cumulative sum of entries. Default is False.
+    cumulative : bool, Optional
+        wheter to plot cumulative sum of entries. Default is None, and asks for user input.
         If True, arguments for rolling average are ignored.
     entrytype: str
         what the entries are (cases, deaths, ...)
@@ -474,11 +514,16 @@ def barstack(df: pd.DataFrame, values: list = [], column: str ='Country',
     if 'suspected' in values_cases['Status'].values:
         with st_columns[i_col]:
             status = st.selectbox(f'{entrytype} to consider', ['Only confirmed', 'Confirmed and suspected'], key=f'sus_{key}')
+            i_col += 1
         filter_ = {'Only confirmed': ['confirmed'], 'Confirmed and suspected': ['confirmed', 'suspected']}[status]
         selected= values_cases[values_cases['Status'].isin(filter_)]
     else:
         selected = values_cases[values_cases['Status'] == 'confirmed']
     if len(selected):
+        if cumulative == None:
+            cumul_daily = st_columns[i_col].radio('',('Cumulative', 'Daily'))
+            cumulative = True if cumul_daily == 'Cumulative' else False
+                                    
         selected['Date'] = vdate_choice(selected['Date_confirmation'], selected['Date_entry'])
         if len(selected[index_col].dropna()):
             fig = go.Figure()  
@@ -509,7 +554,8 @@ def barstack(df: pd.DataFrame, values: list = [], column: str ='Country',
     else:
         st.markdown(f'No reported {entrytype} match the search criteria.')
 
-def barstack_countries(df: pd.DataFrame, key: str = 'barstack_countries', **kwargs):
+def barstack_countries(df: pd.DataFrame, key: str = 'barstack_countries',
+                       cumulative: Optional[bool] = None, **kwargs):
     """
     Note
     ----
@@ -521,6 +567,8 @@ def barstack_countries(df: pd.DataFrame, key: str = 'barstack_countries', **kwar
         Dataframe to start from.
     key : str
         A key for streamlit. The default is 'countries'.
+    cumulative: bool, optional
+        whether to plot cumulative or daily data. Default is None, and asks for user choice.
     **kwargs : 
         Any other keyword argument for the generic plot function.
 
@@ -546,6 +594,9 @@ st.set_page_config(page_title=TITLE,
      })
 st.sidebar.image('tgn.png')
 st.title(TITLE)
+with st.sidebar.expander('Additional Information'):
+    st.markdown('Data from [Global.Health](https://github.com/globaldothealth/monkeypox "https://github.com/globaldothealth/monkeypox")')
+    st.markdown('Rolling averages use an exponential weighing of the data.')
 
 LINELIST_URL = 'https://raw.githubusercontent.com/globaldothealth/monkeypox/main/latest.csv'
 TS_URL = 'https://raw.githubusercontent.com/globaldothealth/monkeypox/main/timeseries-confirmed.csv'
@@ -561,11 +612,11 @@ data_load_state.text('Data loaded!')
 world_tab, country_tab, comparison_tab = st.tabs(['Global', 'Country', 'Compare'])
 with world_tab:
     st.markdown('## Cases globally')
-    plot_tot(all_cases, entrytype='cases', key='cases_world', cumulative=False)
+    plot_tot(all_cases, entrytype='cases', key='cases_world')
     
     st.markdown('## Deaths globally')
     plot_tot(all_cases[all_cases['Date_death'].notna()], entrytype='deaths', 
-                index_col='Date_death', key='deaths_world', cumulative=False)
+                index_col='Date_death', key='deaths_world')
     
     # st.markdown('## Hospitalisations globally')
     # plot_tot(all_cases[all_cases['Date_hospitalisation'].notna()], entrytype='hospitalisations', 
@@ -574,21 +625,22 @@ with world_tab:
 with country_tab:
     st.markdown('## Cases by country')
     all_countries = sorted(list(set(all_cases['Country'])))
-    country = st.selectbox('Select country', all_countries)
+    st_columns = st.columns(4)
+    country = st_columns[0].selectbox('Select country', all_countries)
     country_cases = all_cases[all_cases['Country'] == country]
-    plot_tot(country_cases, key='cases_country', cumulative=False)
+    plot_tot(country_cases, key='cases_country', st_columns=st_columns[-3:])
     
     st.markdown(f'### Deaths in {country}')
     plot_tot(country_cases[country_cases['Date_death'].notna()], entrytype='deaths',
-                index_col='Date_death', key='deaths_country', cumulative=False)
+                index_col='Date_death', key='deaths_country')
 
 with comparison_tab:
     st.markdown('## Compare countries')
     st.markdown('### Cases')
-    plot_countries(all_cases, cumulative=False,  key='countries_cases', daily=False)
+    plot_countries(all_cases,  key='countries_cases')
     st.markdown('### Deaths')
-    plot_countries(all_cases[all_cases['Date_death'].notna()], cumulative=False,  key='multiple_countries_deaths',
-                            daily=False, rolling=True, entrytype='deaths', index_col='Date_death')
+    plot_countries(all_cases[all_cases['Date_death'].notna()],  key='multiple_countries_deaths',
+                            entrytype='deaths', index_col='Date_death')
     
     st.markdown('## Barstacked')
     st.markdown('### Cases')
