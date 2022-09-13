@@ -37,6 +37,7 @@ def load_data(file: str, nrows: Optional[int] = None, cols: Optional[list] = Non
 
     """
     data = pd.read_csv(file, nrows=nrows, usecols=cols)
+    # TODO dtype
     for c in data.columns:
         if c.startswith('Date_'):
             data[c] = pd.to_datetime(data[c], errors=errors) 
@@ -57,7 +58,7 @@ def get_daily_count(df: pd.DataFrame, index_col: str, count_col: str = 'ID'):
     Returns
     -------
     pd.Series
-        DESCRIPTION.
+        The count of entries for each day.
 
     """
     return df.set_index(index_col)[count_col].resample('D').count()
@@ -364,7 +365,7 @@ def plot_tot(df: pd.DataFrame, label: str = '', entrytype: str = 'cases', key: s
 
     """
     if not label:
-        label = f'{"cumulative" if cumulative else "daily"} {entrytype}' 
+        label = '{"cumulative" if cumulative else "daily"} {entrytype}'   ### TODO continue fixing daily vs cumulative
     plot(df, key=key, plot_tot=True, tot_label=label, colours=[colour],
          entrytype=entrytype, cumulative=cumulative, daily=daily, rolling=rolling, **kwargs)
     

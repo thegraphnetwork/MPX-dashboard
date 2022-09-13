@@ -71,6 +71,7 @@ with comparison_tab:
     st.markdown('## Barstacked')
     st.markdown('### Cases')
     barstack_countries(all_cases, cumulative=True,  key='barstack_countries')
+    
 
 
 
