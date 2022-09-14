@@ -11,7 +11,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
-from typing import Optional#, Any, Union
+from typing import Optional, Union#, Any
 
 date_choice = lambda x, y: y if pd.isna(x) else y
 vdate_choice = np.vectorize(date_choice)
@@ -139,8 +139,8 @@ def get_colours(n: int):
 def plot(df: pd.DataFrame, values: list = [], column: str ='Country',
          cumulative: Optional[bool] = None, entrytype: str = 'cases',
          daily: Optional[bool] = None, rolling: Optional[bool] = None,
-         plot_tot: bool = False, tot_label: str = 'World',
-         plot_sumvals: bool = False, sumvals_label: str = 'Sum of selected countries',
+         plot_tot: bool = False, tot_label: Union[str, callable] = 'World',
+         plot_sumvals: bool = False, sumvals_label: Union[str, callable] = 'Sum of selected countries',
          key: str = 'only', index_col: str = 'Date', min_int: int = 3,
          max_int: int = 15, default: int = 7, win_type: Optional[str] = None,
          colours: Optional[list] = None, st_columns: list = []):
@@ -168,12 +168,14 @@ def plot(df: pd.DataFrame, values: list = [], column: str ='Country',
         whether to plot rolling average. Default is None. In such case, a user input is used.
     plot_tot: bool
         whether to plot the values from the whole dataframe (e.g. "World" if column=="Country", both genders if column="Gender")
-    tot_label: str
-        label for the "total" curve. Default
+    tot_label: str or callable
+        label for the "total" curve. Default is World.
+        if callable, it calls the function with locals() as kwargs
     plot_sumvals: bool
         whether to plot the sum of the selected values f(e.g. "England + Scotland + Wales")
-    sumvals_label: str
+    sumvals_label: str or callable
         label for the "sum of selected values" curve. Default is "sum of selected countries"
+        if callable, it calls the function with locals() as kwargs
     key : str, optional
         Key for streamlit, avoid doubles. The default is 'only'.
     index_col: str
@@ -238,6 +240,8 @@ def plot(df: pd.DataFrame, values: list = [], column: str ='Country',
             colour_index = 0
             if plot_tot:
                 data_to_plot = get_daily_count(selected, index_col)
+                if callable(tot_label):
+                    tot_label = tot_label(locals())
                 if cumulative:
                     data_to_plot = data_to_plot.cumsum()
                     fig.add_trace(go.Scatter(x=data_to_plot.index, y=data_to_plot.values, marker_color=colours[colour_index], name=f'{tot_label}'))
@@ -251,6 +255,8 @@ def plot(df: pd.DataFrame, values: list = [], column: str ='Country',
             if plot_sumvals:
                 vals =  selected[selected[column].isin(values)]
                 data_to_plot = get_daily_count(vals, index_col)
+                if callable(sumvals_label):
+                    sumvals_label = sumvals_label(locals())
                 if cumulative:
                     data_to_plot = data_to_plot.cumsum()
                     fig.add_trace(go.Scatter(x=data_to_plot.index, y=data_to_plot.values, marker_color=colours[colour_index], name=f'{sumvals_label}'))
@@ -365,7 +371,7 @@ def plot_tot(df: pd.DataFrame, label: str = '', entrytype: str = 'cases', key: s
 
     """
     if not label:
-        label = '{"cumulative" if cumulative else "daily"} {entrytype}'   ### TODO continue fixing daily vs cumulative
+        label = lambda d: '{} {}'.format('cumulative' if d['cumulative'] else 'daily', d['entrytype'])
     plot(df, key=key, plot_tot=True, tot_label=label, colours=[colour],
          entrytype=entrytype, cumulative=cumulative, daily=daily, rolling=rolling, **kwargs)
     
