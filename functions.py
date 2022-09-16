@@ -34,8 +34,8 @@ def load_data(file: str, nrows: Optional[int] = None, cols: Optional[list] = Non
     -------
     data : pd.DataFrame
         the DataFrame of desired rows and columns, dates are turned to pd.datetime.
-
     """
+    
     data = pd.read_csv(file, nrows=nrows, usecols=cols)
     # TODO dtype
     for c in data.columns:
@@ -59,8 +59,8 @@ def get_daily_count(df: pd.DataFrame, index_col: str, count_col: str = 'ID'):
     -------
     pd.Series
         The count of entries for each day.
-
     """
+    
     return df.set_index(index_col)[count_col].resample('D').count()
 
 def na_percentage(df: pd.DataFrame):
@@ -75,6 +75,7 @@ def na_percentage(df: pd.DataFrame):
     pd.DataFrame
         contains the percentage of nan per column, omitting when 0%
     """
+    
     count_na = lambda df, colname: len(df[df[colname].isna()])
     tot = len(df)/100
     dict_ = {}
@@ -101,8 +102,8 @@ def total_weekly_metrics(df: pd.DataFrame, entrytype: str = 'cases',
     Returns
     -------
     None. Displays metrics in two columns
-
     """
+    
     daily_count = get_daily_count(df, index_col=index_col, count_col=count_col)
     last_week = daily_count.iloc[-7:].sum()
     previous_week = daily_count.iloc[-14:-7].sum()  # Risky because of delay in reporting
@@ -121,8 +122,8 @@ def get_colours(n: int):
     -------
     list
         list of at least n colours.
-
     """
+    
     if n < 10:
         return px.colors.qualitative.G10
     elif n < 24:
@@ -142,7 +143,7 @@ def plot(df: pd.DataFrame, values: list = [], column: str ='Country',
          plot_tot: bool = False, tot_label: Union[str, callable] = 'World',
          plot_sumvals: bool = False, sumvals_label: Union[str, callable] = 'Sum of selected countries',
          key: str = 'only', index_col: str = 'Date', min_int: int = 3,
-         max_int: int = 15, default: int = 7, win_type: Optional[str] = None,
+         max_int: int = 15, default: int = 7, win_type: Optional[str] = 'exponential',
          colours: Optional[list] = None, st_columns: list = []):
     """
     Note
@@ -187,19 +188,19 @@ def plot(df: pd.DataFrame, values: list = [], column: str ='Country',
     default : int, optional
         default value for rolling average number input. The default is 7.
     win_type : Optional[str], optional
-        window type for rolling average. The default is None.
+        window type for rolling average. The default is exponential.
     colours: list, optional
         list of colours. For instance plotly.express.colors.qualitative.G10.
         If None, combines plotly colours to get enough.
     st_columns: list, optional
-        list of streamlit columns. If [], creates 2 columns.
+        list of streamlit columns. If [], creates 3 columns.
         Provide empty columns, or all columns, if others are already used.
         
     Returns
     -------
     None.
-
     """
+    
     if not st_columns:
         st_columns = st.columns(3)
     i_col = -3
@@ -322,8 +323,8 @@ def plot_countries(df: pd.DataFrame, key: str = 'countries',
     Returns
     -------
     None.
-
     """
+    
     all_countries = sorted(list(set(df['Country'])))
     st_columns = st.columns(4)
     with st_columns[0]:
@@ -368,8 +369,8 @@ def plot_tot(df: pd.DataFrame, label: str = '', entrytype: str = 'cases', key: s
     Returns
     -------
     None.
-
     """
+    
     if not label:
         label = lambda d: '{} {}'.format('cumulative' if d['cumulative'] else 'daily', d['entrytype'])
     plot(df, key=key, plot_tot=True, tot_label=label, colours=[colour],
@@ -401,8 +402,8 @@ def plot_genders(df: pd.DataFrame, key: str = 'genders', cumulative: Optional[bo
     Returns
     -------
     None.
-
     """
+    
     plot(df, values=['male', 'female'], key=key, column='Gender', plot_tot=True,
          cumulative=cumulative, daily=daily, rolling=rolling, tot_label='all cases',
          colours=['black', 'blue', 'pink'], **kwargs)
@@ -427,8 +428,8 @@ def plot_outcome(df: pd.DataFrame, include_nan: bool = True, key: str = 'outcome
     Returns
     -------
     None.
-
     """
+    
     values = ["Death", "Recovered", np.nan] if include_nan else ["Death", "Recovered"]
     plot(df, values=values, column='Outcome', cumulative=True, **kwargs)
 
@@ -452,8 +453,8 @@ def plot_needed_hospital(df: pd.DataFrame, include_nan: bool = True, key: str = 
     Returns
     -------
     None.
-
     """
+    
     values = ["Y", "N", np.nan] if include_nan else ["Y", "N"]
     plot(df, values=values, column='Outcome', cumulative=True, **kwargs)
 
@@ -494,8 +495,8 @@ def barstack(df: pd.DataFrame, values: list = [], column: str ='Country',
     Returns
     -------
     None.
-
     """
+    
     if not st_columns:
         st_columns = st.columns(2)
     i_col = -2
@@ -565,10 +566,126 @@ def barstack_countries(df: pd.DataFrame, key: str = 'barstack_countries',
     Returns
     -------
     None.
-
     """
+    
     all_countries = sorted(list(set(df['Country'])))
     st_columns = st.columns(3)
     with st_columns[0]:
         sel_countries = st.multiselect('Select countries to compare', all_countries, key=f'sel_{key}')
     barstack(df, values=sel_countries, key=key, st_columns=st_columns[-2:], **kwargs)
+    
+def evolution_on_map(df: pd.DataFrame, entrytype: str = 'cases', date_col: str = 'Date_confirmation',
+                     curve: Optional[str] = None, dateslice: Optional[tuple] = None, key: str = 'map',
+                     st_columns: Optional[list] = None, min_int: int = 3, max_int: int = 15,
+                     default: int = 7, win_type: Optional[str] = 'exponential', color_scale: Union[str, list] = None):
+    """
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame with the data to plot
+    entrytype: str
+        what the entries are (cases, deaths, ...)
+    datecol: str
+        the column with the entrytype dates
+    curve: str, optional
+        cumulative, daily, or rolling average. If None produces radio selector
+    dateslice: tuple, optional
+        minimum and maximum date to consider. Default(None) creates date inputs
+    key : str, optional
+        Key for streamlit, avoid doubles. The default is 'only'.
+        column to use as x axes. Default is date_confirmation if available and date_entry otherwise
+    min_int : int, optional
+        minimum value for rolling average. The default is 3.
+    max_int : int, optional
+        maximum value for rolling average. The default is 15.
+    default : int, optional
+        default value for rolling average number input. The default is 7.
+    win_type : Optional[str], optional
+        window type for rolling average. The default is exponential.
+    color_scale : str or list, optional
+        A color scale. The default is None, which uses 'Plasma'.
+   
+    Returns
+    -------
+    None.
+    """
+    
+    all_countries = sorted(list(set(df['Country'])))
+    if not st_columns:
+        st_columns = st.columns(4)
+    i_col = -4
+    if 'suspected' in df['Status'].values:
+        with st_columns[i_col]:
+            status = st.selectbox(f'{entrytype} to consider', ['Only confirmed', 'Confirmed and suspected'], key=f'sus_{key}')
+            i_col += 1
+        filter_ = {'Only confirmed': ['confirmed'], 'Confirmed and suspected': ['confirmed', 'suspected']}[status]
+        df= df[df['Status'].isin(filter_)]
+    else:
+        df = df[df['Status'] == 'confirmed']
+    if curve == None:
+        curve = st_columns[i_col].radio(f'{entrytype} to display cases', ('Cumulative', 'Daily', 'Rolling average'), key=f'radio_{key}').lower()
+        i_col += 1
+    if curve == 'rolling average':
+        int_ = st_columns[i_col].number_input('Rolling average interval', min_value=min_int, max_value=max_int, value=default, key=key)
+    with st_columns[i_col]:
+        fix_scale = st.checkbox('Fix color scale', value=True, key='fix_scale')
+        i_col += 1
+      
+    d_iso3 = df.set_index('Country')['Country_ISO3'].to_dict()
+    df = pd.DataFrame(df.set_index(date_col).groupby('Country').resample('D').count()['ID'])
+    df.columns = [f'daily {entrytype}']
+    dmin, dmax = df.index.get_level_values(date_col).min(), df.index.get_level_values('Date_confirmation').max()
+    if dateslice == None:
+        with st_columns[i_col]:
+            dmin = st.date_input(label='Start: ', value=dmin,  # two separate widgets otherwise error while 1 date only is chosen
+                            key='start', help="The start date")
+            dmax = st.date_input(label='End : ', value=dmax,
+                            key='end', help="The end date")
+    date_range = pd.date_range(start=dmin, end=dmax, freq='D')
+    new_index = pd.MultiIndex.from_product([all_countries, date_range], names=['Country', date_col])
+    df = df.reindex(new_index)
+    df['Country_ISO3'] = df.index.get_level_values('Country').map(d_iso3)
+    df[f'daily {entrytype}'] = df[f'daily {entrytype}'].fillna(0)
+    if curve == 'cumulative':
+        df[f'cumulative {entrytype}'] = df.groupby('Country').cumsum()[f'daily {entrytype}']
+    df = df.reset_index()
+    df[date_col] = df[date_col].map(lambda x: x.strftime('%d-%m-%Y'))
+    curve_col = f'{curve} {entrytype if curve != "rolling average" else ""}'.strip()
+    if curve_col == 'rolling average':
+        df['rolling average'] =  df[f'daily {entrytype}'].rolling(int_, win_type=win_type).mean()
+        
+    fig = px.choropleth(df, locations='Country_ISO3',
+                        color=curve_col, 
+                        hover_name='Country',
+                        color_continuous_scale=color_scale if color_scale else px.colors.sequential.Plasma,
+                        animation_frame=date_col,
+                        range_color=[0, df[curve_col].max()] if fix_scale else None)
+    st.plotly_chart(fig, use_container_width=True)
+
+def delay_distr(df: pd.DataFrame, date_col1: str = 'Date_confirmation', date_col2: str = 'Date_entry'):
+    """
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The dataframe with all the cases.
+    date_col1 : str
+        the column containing the first date. The default is 'Date_confirmation'.
+    date_col2 : str
+        the column containing the second date. The default is 'Date_entry'.
+
+    Returns
+    -------
+    None.
+
+    """
+    notna = df[np.logical_and(df[date_col1].notna(), df[date_col2].notna())]
+    series = notna[date_col2] - notna[date_col1]
+    series = series.apply(lambda x: x.days)
+    st.markdown('Exclude extreme values')
+    left, right = st.columns(2)
+    min_ = left.number_input("Minimum", min_value=series.min(), max_value=series.max(), value=-5, step=1)
+    max_ = right.number_input("Maximum", min_value=series.min(), max_value=series.max(), value=10, step=1)
+    series = series[np.logical_and(series > min_ ,series < max_)]
+
+    fig = px.histogram(series)
+    st.plotly_chart(fig, use_container_width=True)

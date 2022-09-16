@@ -1,5 +1,6 @@
 import streamlit as st
-from functions import load_data, total_weekly_metrics, plot_tot, plot_countries, barstack_countries
+from functions import load_data, total_weekly_metrics, plot_tot, plot_countries, \
+    evolution_on_map, barstack_countries
     
 TITLE = 'Monkey Pox Evolution'
 st.set_page_config(page_title=TITLE,
@@ -20,7 +21,7 @@ file = 'https://raw.githubusercontent.com/globaldothealth/monkeypox/main/latest.
 # TS_URL = 'https://raw.githubusercontent.com/globaldothealth/monkeypox/main/timeseries-confirmed.csv'
 
 data_load_state = st.text('Loading data...')
-all_cases = load_data(file, cols=['ID', 'Status', 'Country', 'Date_confirmation', 'Date_entry', 'Date_death'])
+all_cases = load_data(file, cols=['ID', 'Status', 'Country', 'Country_ISO3', 'Date_confirmation', 'Date_entry', 'Date_death'])
 # all_cases = load_data(cols=None)
 data_load_state.text('Data loaded!')
 
@@ -71,6 +72,11 @@ with comparison_tab:
     st.markdown('## Barstacked')
     st.markdown('### Cases')
     barstack_countries(all_cases, cumulative=True,  key='barstack_countries')
+    
+    st.markdown('## Maps')
+    st.markdown('### Cases')
+    evolution_on_map(all_cases, key='cases_map')
+    
     
 
 
