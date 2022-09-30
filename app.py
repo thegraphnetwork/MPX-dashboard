@@ -20,8 +20,8 @@ with st.sidebar.expander('Additional Information'):
     st.markdown('Data from [Global.Health](https://github.com/globaldothealth/monkeypox "https://github.com/globaldothealth/monkeypox")')
     st.markdown('Rolling averages use an exponential weighing of the data.')
 
-# casesfile = 'https://raw.githubusercontent.com/globaldothealth/monkeypox/main/latest.csv'
-casesfile = 'data_20Sept2022.csv'
+# rawfile = 'https://raw.githubusercontent.com/globaldothealth/monkeypox/main/latest.csv'
+rawfile = 'data_20Sept2022.csv'
 # TS_URL = 'https://raw.githubusercontent.com/globaldothealth/monkeypox/main/timeseries-confirmed.csv'
 # cols_needed = ['ID', 'Status', 'Country', 'Country_ISO3', 'Date_confirmation', 'Date_entry', 'Date_death']
 cols_needed = None
@@ -32,74 +32,89 @@ if os.path.isfile('lines_read.txt'):
         skiprows = int(f.read())
 else:
     skiprows = 0
-new_cases = load_cases(casesfile, usecols=None, skiprows=skiprows)
+new_data = load_cases(rawfile, usecols=None, skiprows=skiprows)
 data_load_state.text('Data loaded!')
 
-newrows = len(new_cases)
+newrows = len(new_data)
 with open('lines_read.txt', 'w') as f:
     f.write(f'{skiprows + newrows}')
 
 if newrows:
-    new_aggr_cases = group_and_aggr(new_cases, column=csv_specs.countrycol, date_col=csv_specs.confdatecol,
+    new_sus = new_data[new_data['Status'] == 'suspected']
+    new_aggr_cases = group_and_aggr(new_data, column=csv_specs.countrycol, date_col=csv_specs.confdatecol,
                         dropna=True, entrytype='cases', dropzeros=True)
     add_to_parquet(new_aggr_cases, 'cases.parquet')
-    new_aggr_deaths = group_and_aggr(new_cases, column=csv_specs.countrycol, date_col=csv_specs.deathdatecol,
+    new_aggr_sus_cases = group_and_aggr(new_sus, column=csv_specs.countrycol, date_col=csv_specs.entrydatecol,
+                        dropna=True, entrytype='cases', dropzeros=True)
+    add_to_parquet(new_aggr_sus_cases, 'sus_cases.parquet')
+    new_aggr_deaths = group_and_aggr(new_data, column=csv_specs.countrycol, date_col=csv_specs.deathdatecol,
                         dropna=True, entrytype='deaths', dropzeros=True)
     add_to_parquet(new_aggr_deaths, 'deaths.parquet')
+    new_aggr_sus_deaths = group_and_aggr(new_sus[new_sus['Outcome'] == 'Death'], column=csv_specs.countrycol,
+                                         date_col=csv_specs.deathdatecol, # NB. to discuss
+                                         dropna=True, entrytype='deaths', dropzeros=True)
+    add_to_parquet(new_aggr_sus_deaths, 'sus_deaths.parquet')
 
 cases = pd.read_parquet('cases.parquet', columns=cols_needed)
+sus_cases = pd.read_parquet('sus_cases.parquet', columns=cols_needed)
 deaths = pd.read_parquet('deaths.parquet', columns=cols_needed)
+sus_deaths = pd.read_parquet('sus_deaths.parquet', columns=cols_needed)
 # if st.checkbox('Show all_cases'):
 #     st.subheader('Linelist data')
 #     st.dataframe(all_cases)
 
 world_tab, country_tab, comparison_tab = st.tabs(['Global', 'Country', 'Compare'])
 with world_tab:
-    total_weekly_metrics(all_cases, entrytype='cases', index_col='Date_confirmation')
-    total_weekly_metrics(all_cases[all_cases['Date_death'].notna()], entrytype='deaths', index_col='Date_death')    
+    st_columns = st.columns(4)
+    do_sus = False
+    if len(sus_cases):
+        status = st_columns[0].selectbox('Entries to consider', ['Only confirmed', 'Confirmed and suspected'], key='sus_selector_world')
+        do_sus = True if status == 'Confirmed and suspected' else False
+    # do_sus = None
+    total_weekly_metrics(cases, aggr_sus=sus_cases, key='cases', do_sus=do_sus)
+    total_weekly_metrics(deaths, aggr_sus=sus_deaths, key='deaths', do_sus=do_sus)    
     st.markdown('## Cases globally')
-    plot_tot(all_cases, entrytype='cases', key='cases_world')
+    plot_tot(cases, aggr_sus=sus_cases, key='cases_world', do_sus=do_sus, st_columns=None)
     
     st.markdown('## Deaths globally')
-    plot_tot(all_cases[all_cases['Date_death'].notna()], entrytype='deaths', 
-                index_col='Date_death', key='deaths_world')
+    plot_tot(deaths, sus_deaths, key='deaths_world', do_sus=do_sus, st_columns=None)
     
-    # st.markdown('## Hospitalisations globally')
-    # plot_tot(all_cases[all_cases['Date_hospitalisation'].notna()], entrytype='hospitalisations', 
-    #             index_col='Date_hospitalisation', key='hospitalisations_world', cumulative=False)
-
 with country_tab:
     st.markdown('## Cases by country')
-    all_countries = sorted(list(set(all_cases['Country'])))
+    all_countries = sorted(list(set(cases['Country']).union(set(sus_cases['Country']))))
     st_columns = st.columns(4)
     country = st_columns[0].selectbox('Select country', all_countries)
-    country_cases = all_cases[all_cases['Country'] == country]
-    
-    total_weekly_metrics(country_cases, entrytype='cases', index_col='Date_confirmation')
-    total_weekly_metrics(country_cases[country_cases['Date_death'].notna()], entrytype='deaths', index_col='Date_death')    
+    country_cases = cases[cases['Country'] == country]
+    country_deaths = deaths[deaths['Country'] == country]
+    country_sus_cases = sus_cases[sus_cases['Country'] == country]
+    do_sus = False
+    if len(country_sus_cases):
+        status = st_columns[1].selectbox('Entries to consider', ['Only confirmed', 'Confirmed and suspected'], key='sus_selector_country')
+        do_sus = True if status == 'Confirmed and suspected' else False
+    country_sus_deaths = sus_deaths[sus_deaths['Country'] == country]
+    total_weekly_metrics(country_cases, aggr_sus=country_sus_cases, do_sus=do_sus)
+    total_weekly_metrics(country_deaths, aggr_sus=country_sus_deaths, do_sus=do_sus)    
     
     st.markdown(f'### Cases in {country}')
-    plot_tot(country_cases, key='cases_country', st_columns=st_columns[-3:])
+    plot_tot(country_cases, aggr_sus=country_sus_cases, key='cases_country', st_columns=None, do_sus=do_sus)
     
     st.markdown(f'### Deaths in {country}')
-    plot_tot(country_cases[country_cases['Date_death'].notna()], entrytype='deaths',
-                index_col='Date_death', key='deaths_country')
+    plot_tot(country_deaths, aggr_sus=country_sus_deaths, key='deaths_country', st_columns=None, do_sus=do_sus)
 
 with comparison_tab:
     st.markdown('## Compare countries')
     st.markdown('### Cases')
-    plot_countries(all_cases,  key='countries_cases')
+    plot_countries(cases, aggr_sus=sus_cases, key='countries_cases')
     st.markdown('### Deaths')
-    plot_countries(all_cases[all_cases['Date_death'].notna()],  key='multiple_countries_deaths',
-                            entrytype='deaths', index_col='Date_death')
+    plot_countries(deaths, aggr_sus=sus_deaths, key='countries_deaths')
     
     st.markdown('## Barstacked')
     st.markdown('### Cases')
-    barstack_countries(all_cases, cumulative=True,  key='barstack_countries')
+    barstack_countries(cases, aggr_sus=sus_cases, cumulative=True,  key='barstack_countries')
     
     st.markdown('## Maps')
     st.markdown('### Cases')
-    evolution_on_map(all_cases, key='cases_map')
+    evolution_on_map(cases, aggr_sus=sus_cases, key='cases_map')
     
     
 

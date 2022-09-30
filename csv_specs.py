@@ -30,4 +30,5 @@ outcomecol = 'Outcome'
 outcomevals = ["Death", "Recovered"]  # do not include Nan
 hospitalcol = 'Hospitalised (Y/N/NA)'
 entrydatecol = 'Date_entry'
+lastmoddatecol = 'Date_last_modified'
 deathdatecol = 'Date_death'
