@@ -1,6 +1,9 @@
 import streamlit as st
-from functions import load_data, total_weekly_metrics, plot_tot, plot_countries, \
-    evolution_on_map, barstack_countries
+import csv_specs
+import os
+import pandas as pd
+from functions import load_cases, group_and_aggr, total_weekly_metrics, plot_tot, plot_countries, \
+    evolution_on_map, barstack_countries, add_to_parquet
     
 TITLE = 'Monkey Pox Evolution'
 st.set_page_config(page_title=TITLE,
@@ -17,14 +20,35 @@ with st.sidebar.expander('Additional Information'):
     st.markdown('Data from [Global.Health](https://github.com/globaldothealth/monkeypox "https://github.com/globaldothealth/monkeypox")')
     st.markdown('Rolling averages use an exponential weighing of the data.')
 
-file = 'https://raw.githubusercontent.com/globaldothealth/monkeypox/main/latest.csv'
+# casesfile = 'https://raw.githubusercontent.com/globaldothealth/monkeypox/main/latest.csv'
+casesfile = 'data_20Sept2022.csv'
 # TS_URL = 'https://raw.githubusercontent.com/globaldothealth/monkeypox/main/timeseries-confirmed.csv'
+# cols_needed = ['ID', 'Status', 'Country', 'Country_ISO3', 'Date_confirmation', 'Date_entry', 'Date_death']
+cols_needed = None
 
 data_load_state = st.text('Loading data...')
-all_cases = load_data(file, cols=['ID', 'Status', 'Country', 'Country_ISO3', 'Date_confirmation', 'Date_entry', 'Date_death'])
-# all_cases = load_data(cols=None)
+if os.path.isfile('lines_read.txt'):
+    with open('lines_read.txt', 'r') as f:
+        skiprows = int(f.read())
+else:
+    skiprows = 0
+new_cases = load_cases(casesfile, usecols=None, skiprows=skiprows)
 data_load_state.text('Data loaded!')
 
+newrows = len(new_cases)
+with open('lines_read.txt', 'w') as f:
+    f.write(f'{skiprows + newrows}')
+
+if newrows:
+    new_aggr_cases = group_and_aggr(new_cases, column=csv_specs.countrycol, date_col=csv_specs.confdatecol,
+                        dropna=True, entrytype='cases', dropzeros=True)
+    add_to_parquet(new_aggr_cases, 'cases.parquet')
+    new_aggr_deaths = group_and_aggr(new_cases, column=csv_specs.countrycol, date_col=csv_specs.deathdatecol,
+                        dropna=True, entrytype='deaths', dropzeros=True)
+    add_to_parquet(new_aggr_deaths, 'deaths.parquet')
+
+cases = pd.read_parquet('cases.parquet', columns=cols_needed)
+deaths = pd.read_parquet('deaths.parquet', columns=cols_needed)
 # if st.checkbox('Show all_cases'):
 #     st.subheader('Linelist data')
 #     st.dataframe(all_cases)
