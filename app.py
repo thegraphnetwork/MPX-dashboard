@@ -20,11 +20,7 @@ with st.sidebar.expander('Additional Information'):
     st.markdown('Data from [Global.Health](https://github.com/globaldothealth/monkeypox "https://github.com/globaldothealth/monkeypox")')
     st.markdown('Rolling averages use an exponential weighing of the data.')
 
-# rawfile = 'https://raw.githubusercontent.com/globaldothealth/monkeypox/main/latest.csv'
-rawfile = 'data_20Sept2022.csv'
-# TS_URL = 'https://raw.githubusercontent.com/globaldothealth/monkeypox/main/timeseries-confirmed.csv'
-# cols_needed = ['ID', 'Status', 'Country', 'Country_ISO3', 'Date_confirmation', 'Date_entry', 'Date_death']
-cols_needed = None
+rawfile = 'https://raw.githubusercontent.com/globaldothealth/monkeypox/main/latest_deprecated.csv'
 
 data_load_state = st.text('Loading data...')
 if os.path.isfile('lines_read.txt'):
@@ -40,7 +36,7 @@ with open('lines_read.txt', 'w') as f:
     f.write(f'{skiprows + newrows}')
 
 if newrows:
-    new_sus = new_data[new_data['Status'] == 'suspected']
+    new_sus = new_data[new_data[csv_specs.statuscol] == csv_specs.statusvals['suspected']]
     new_aggr_cases = group_and_aggr(new_data, column=csv_specs.countrycol, date_col=csv_specs.confdatecol,
                         dropna=True, entrytype='cases', dropzeros=True)
     add_to_parquet(new_aggr_cases, 'cases.parquet')
@@ -50,18 +46,16 @@ if newrows:
     new_aggr_deaths = group_and_aggr(new_data, column=csv_specs.countrycol, date_col=csv_specs.deathdatecol,
                         dropna=True, entrytype='deaths', dropzeros=True)
     add_to_parquet(new_aggr_deaths, 'deaths.parquet')
-    new_aggr_sus_deaths = group_and_aggr(new_sus[new_sus['Outcome'] == 'Death'], column=csv_specs.countrycol,
-                                         date_col=csv_specs.deathdatecol, # NB. to discuss
+    new_aggr_sus_deaths = group_and_aggr(new_sus[new_sus[csv_specs.outcomecol] == csv_specs.outcomevals['death']], column=csv_specs.countrycol,
+                                         date_col=csv_specs.deathdatecol, # NB. there are some deaths with no deathdate. 
+                                         # right now they are being excluded. We could plot them with the date of entry or of last modification
                                          dropna=True, entrytype='deaths', dropzeros=True)
     add_to_parquet(new_aggr_sus_deaths, 'sus_deaths.parquet')
 
-cases = pd.read_parquet('cases.parquet', columns=cols_needed)
-sus_cases = pd.read_parquet('sus_cases.parquet', columns=cols_needed)
-deaths = pd.read_parquet('deaths.parquet', columns=cols_needed)
-sus_deaths = pd.read_parquet('sus_deaths.parquet', columns=cols_needed)
-# if st.checkbox('Show all_cases'):
-#     st.subheader('Linelist data')
-#     st.dataframe(all_cases)
+cases = pd.read_parquet('cases.parquet')
+sus_cases = pd.read_parquet('sus_cases.parquet')
+deaths = pd.read_parquet('deaths.parquet')
+sus_deaths = pd.read_parquet('sus_deaths.parquet')
 
 world_tab, country_tab, comparison_tab = st.tabs(['Global', 'Country', 'Compare'])
 with world_tab:
@@ -70,7 +64,6 @@ with world_tab:
     if len(sus_cases):
         status = st_columns[0].selectbox('Entries to consider', ['Only confirmed', 'Confirmed and suspected'], key='sus_selector_world')
         do_sus = True if status == 'Confirmed and suspected' else False
-    # do_sus = None
     total_weekly_metrics(cases, aggr_sus=sus_cases, key='cases', do_sus=do_sus)
     total_weekly_metrics(deaths, aggr_sus=sus_deaths, key='deaths', do_sus=do_sus)    
     st.markdown('## Cases globally')
@@ -81,17 +74,17 @@ with world_tab:
     
 with country_tab:
     st.markdown('## Cases by country')
-    all_countries = sorted(list(set(cases['Country']).union(set(sus_cases['Country']))))
+    all_countries = sorted(list(set(cases[csv_specs.countrycol]).union(set(sus_cases[csv_specs.countrycol]))))
     st_columns = st.columns(4)
     country = st_columns[0].selectbox('Select country', all_countries)
-    country_cases = cases[cases['Country'] == country]
-    country_deaths = deaths[deaths['Country'] == country]
-    country_sus_cases = sus_cases[sus_cases['Country'] == country]
+    country_cases = cases[cases[csv_specs.countrycol] == country]
+    country_deaths = deaths[deaths[csv_specs.countrycol] == country]
+    country_sus_cases = sus_cases[sus_cases[csv_specs.countrycol] == country]
     do_sus = False
     if len(country_sus_cases):
         status = st_columns[1].selectbox('Entries to consider', ['Only confirmed', 'Confirmed and suspected'], key='sus_selector_country')
         do_sus = True if status == 'Confirmed and suspected' else False
-    country_sus_deaths = sus_deaths[sus_deaths['Country'] == country]
+    country_sus_deaths = sus_deaths[sus_deaths[csv_specs.countrycol] == country]
     total_weekly_metrics(country_cases, aggr_sus=country_sus_cases, do_sus=do_sus)
     total_weekly_metrics(country_deaths, aggr_sus=country_sus_deaths, do_sus=do_sus)    
     
