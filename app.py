@@ -21,8 +21,8 @@ file = 'https://raw.githubusercontent.com/globaldothealth/monkeypox/main/latest.
 # TS_URL = 'https://raw.githubusercontent.com/globaldothealth/monkeypox/main/timeseries-confirmed.csv'
 
 data_load_state = st.text('Loading data...')
-all_cases = load_data(file, cols=['ID', 'Status', 'Country', 'Country_ISO3', 'Date_confirmation', 'Date_entry', 'Date_death'])
-# all_cases = load_data(cols=None)
+# all_cases = load_data(file, cols=['ID', 'Status', 'Country', 'Country_ISO3', 'Date_confirmation', 'Date_entry', 'Date_death'])
+all_cases = load_data(file, cols=None)
 data_load_state.text('Data loaded!')
 
 # if st.checkbox('Show all_cases'):
