@@ -32,6 +32,7 @@ hospitalcol = 'Hospitalised (Y/N/NA)'
 entrydatecol = 'Date_entry'
 lastmoddatecol = 'Date_last_modified'
 deathdatecol = 'Date_death'
+iso3col = 'Country_ISO3'
 idcol = 'ID'
 statuscol = 'Status'
 statusvals = {'suspected': 'suspected', 'confirmed': 'confirmed'}

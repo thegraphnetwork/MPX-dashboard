@@ -11,46 +11,209 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
-from typing import Optional, Union#, Any
+from typing import Optional, Union, Any
 import csv_specs
 import pyarrow.parquet as pq
 import pyarrow as pa
 import utils
+from epigraphhub.settings import env
+from epigraphhub.connection import get_engine
+import wbgapi as wb
 
-# date_choice = lambda x, y: y if pd.isna(x) else y
-# vdate_choice = np.vectorize(date_choice)
-
-# @st.cache(allow_output_mutation=True)
-# def old_load_data(file: str, nrows: Optional[int] = None, cols: Optional[list] = None,
-#               maptobool: Optional[list] = None, errors: str = 'raise', **kwargs):
-#     """
-#     Parameters
-#     ----------
-#     file: str
-#         the csv to read
-#     nrows : Optional[int], optional
-#         number of rows to load. The default is None, i.e. all rows.
-#     cols : Optional[list], optional
-#         columns to read. The default is None, i.e. all rows.
-#     maptobool: Optional[list]
-#         columns to map to a "boolean" (True, False, NaN)
-#     errors: str
-#         what to do with errors (raise, coerce, ignore), as in pd.to_datetime. Default is 'coerce'.
-#     kwargs: dict
-#         additional kwargs to pass to read_csv. e.g. dtype
-#     Returns
-#     -------
-#     data : pd.DataFrame
-#         the DataFrame of desired rows and columns, dates are turned to pd.datetime.
-#     """
+def cols_to_dict(df:pd.DataFrame, a: str, b: str):
+    """
+    Parameters
+    ----------
+    df: pd.DataFrame
+        the dataframe to start from
+    a: str
+        the column for dictionary keys
+    b: str
+        the column for dictionary values
     
-#     data = pd.read_csv(file, nrows=nrows, usecols=cols, **kwargs)
-#     for c in maptobool:
-#         data[c] = data[c].map({'Y': True, 'N': False, 'NA': None})
-#     for c in data.columns:
-#         if c.startswith('Date_'):
-#             data[c] = pd.to_datetime(data[c], errors=errors) 
-#     return data 
+    Returns
+    -------
+    dict
+        dictionary of corrispondence of values in 'a' to values in 'b'
+    """
+    return df.set_index(a)[b].to_dict()
+
+is_bijective: lambda x: len(set(x.keys())) == len(set(x.values()))  # whether dictionary is bijective/reversible
+
+def keys_same_val(dict_: dict):
+    """
+    Parameters
+    ----------
+    dict_ : dict
+        the dictionary to analyse.
+
+    Returns
+    -------
+    to_return : dict
+        {value: [list of keys with that value]}
+
+    """
+    s = pd.Series(dict_)
+    dup_vals = list(set(s[s.duplicated()]))
+    to_return = {}
+    for dup in dup_vals:
+        to_return[dup] = s[s == dup].index.tolist()
+    return to_return
+    
+def get_locality_names():
+    """
+    Returns
+    -------
+    pd.DataFrame
+        description of the location_key values
+
+    """
+    return pd.read_sql_table('locality_names_0',
+                             get_engine(env.db.default_credential),
+                             schema = 'google_health')
+
+def location_name_to_location_key(loc: str, loc_table: Optional[pd.DataFrame] = None):
+    """
+    Parameters
+    ----------
+    loc : str
+        location name.
+
+    Returns
+    -------
+    str
+        location id (as in google api).
+
+    """
+    if loc_table is None:
+        loc_table = get_locality_names()
+    locs0 = loc_table[loc_table['aggregation_level'] == 0]
+    if loc in locs0['country_name'].values:
+        return locs0[locs0['country_name'] == loc]['location_key'].iloc[0]
+    locs1 = loc_table[loc_table['aggregation_level'] == 1]
+    if loc in locs1['subregion1_name'].values:
+        return locs1[locs1['subregion1_name'] == loc]['location_key'].iloc[0]
+    locs2 = loc_table[loc_table['aggregation_level'] == 2]
+    if loc in locs2['subregion2_name'].values:
+        return locs2[locs2['subregion2_name'] == loc]['location_key'].iloc[0]
+    locs3 = loc_table[loc_table['aggregation_level'] == 3]
+    if loc in locs3['locality_name'].values:
+        return locs3[locs3['locality_name'] == loc]['location_key'].iloc[0]
+    
+# def get_iso2_to_iso3():
+#     df = get_locality_names()
+#     return cols_to_dict(df, 'iso_3166_1_alpha_2', 'iso_3166_1_alpha_3')
+
+@st.cache(allow_output_mutation=True)
+def get_demographics_egh():
+    """
+
+    Returns
+    -------
+    pd.Dataframe
+        the demographics table
+
+    """
+    return pd.read_sql_table('demographics', 
+                             get_engine(env.db.default_credential),
+                             schema = 'google_health')
+def get_country_pop_egh(loclist: Optional[list] = None, type_: str = 'country'):
+    """
+    Parameters
+    ----------
+    loclist : Optional[list], optional
+        the list of locations desired. The default is None.
+    type_ : str, optional
+        the type of location specifications. Default is 'country'. 
+        Options are 'country' (case insensitive) anything containing 'iso3' (case insensitive), 
+        otherwise 'location_key' is supposed. For countries, location_key is the iso2 code.
+
+    Returns
+    -------
+    pd.Series
+        the total population for each country in loclist, index is as loclist, according to type_
+
+    """
+    pop = get_demographics_egh()
+    if loclist:
+        corr = False
+        if type_.lower() == 'country':
+            corr = {utils.country_to_location_key[i]: i for i in loclist}
+            loclist = list(corr.keys())
+        elif 'iso3' in type_.lower():
+            corr = utils.iso2_to_iso3
+            loclist = [utils.iso3_to_iso2[i] for i in loclist]
+        pop = pop[pop['location_key'].isin(loclist)]
+    else:
+        corr = utils.location_key_to_country if type_.lower() == 'country' else utils.iso3_to_iso2 if 'iso2' in type_.lower() else False
+    pop[type_] = pop['location_key'].map(corr) if corr else pop['location_key']
+    return pop.set_index(type_)['population']
+
+@st.cache(allow_output_mutation=True)
+def get_wb_data(time: str, ind: Union[str, list] = ["SP.POP.TOTL.FE.IN", "SP.POP.TOTL.MA.IN"],
+                country: Union[list, str] = 'all'):
+    """
+    Parameters
+    ----------
+    time : str
+        time specification (e.g. YR2021).
+    ind : Union[str, list], optional
+        Field(s) required. The default is ["SP.POP.TOTL.FE.IN", "SP.POP.TOTL.MA.IN"].
+    country : Union[list, str], optional
+        ISO3 of the country/ies desired. The default is 'all'.
+
+    Returns
+    -------
+    pd.DataFrame
+        the requested table.
+
+    """
+    return wb.data.DataFrame(series=ind, economy=country, db=2, time=time)
+    
+def get_country_pop_wb(year: Optional[int] = None,
+                    loclist: Optional[list] = None, type_: str = 'country'):
+    """
+    Parameters
+    ----------
+    year: int, optional
+        The year that you want to extract the data. Default is None and uses most recent available
+    loclist: list, optional
+        the list of locations desired
+    type_: str
+        the type of location specifications. Default is 'country'. 
+        Options are 'country' (case insensitive) anything containing 'iso2' (case insensitive), 
+        otherwise 'iso3' is supposed
+    Returns
+    -------
+    pd.Series
+        the total population for each country in loclist, index is as loclist, according to type_
+    """
+    if year == None:
+        year = pd.to_datetime('today').year
+
+    ind = ["SP.POP.TOTL.FE.IN", "SP.POP.TOTL.MA.IN"] 
+    if loclist:
+        corr = False
+        if type_.lower() == 'country':
+            corr = {utils.country_to_iso3[i]: i for i in loclist}
+            loclist = list(corr.keys())
+        elif 'iso2' in type_.lower():
+            corr = utils.iso3_to_iso2
+            loclist = [utils.iso2_to_iso3[i] for i in loclist]
+    else:
+        corr = utils.iso3_to_country if type_.lower() == 'country' else utils.iso3_to_iso2 if 'iso2' in type_.lower() else False
+    while True:
+        try:
+            time = f'YR{year}' # specify the year that you want to get 
+            df = get_wb_data(ind, time, country=loclist)
+            break
+        except wb.APIResponseError: 
+            year -= 1
+    df = df.reset_index()
+    df = df.rename(columns = {'economy': 'country', 'SP.POP.TOTL.FE.IN': 'total_female_pop', 'SP.POP.TOTL.MA.IN': 'total_male_pop'})
+    df[type_] = df['country'].map(corr) if corr else df['country']
+    df.set_index(type_, inplace = True)
+    return df['total_female_pop'] + df['total_male_pop']
 
 # @st.cache(allow_output_mutation=True)
 def load_cases(file: str, skiprows: Optional[int] = None, nrows: Optional[int] = None,
@@ -146,8 +309,32 @@ def add_to_parquet(df: pd.DataFrame, path: str):
     """
     pq.write_to_dataset(pa.Table.from_pandas(df) , root_path=path)
 
-aggr_groups = lambda df: df.groupby(level=0).sum().asfreq('D').fillna(0)  # e.g. aggregates all countries for each day
+def aggr_groups(df: pd.DataFrame, dates_padded: bool = True, fill_value: Any = 0):
+    """
+    Parameters
+    ----------
+    df : pd.DataFrame
+        the dataframe aggregated by groups
+    dates_padded : bool, optional
+        Whether the dates should be padded or not in the return value. The default is True.
+    fill_value : Any, optional
+        value for fillna. The default is 0. Use None to keep NaN.
+        Only matters if dates_padded == True
+    
 
+    Returns
+    -------
+    df : pd.DataFrame
+        the dataframe where all the groups have been aggregated together
+
+    """
+    df = df.groupby(level=0).sum()
+    if dates_padded:
+        df = df.asfreq('D')
+        if fill_value != None:
+            df = df.fillna(fill_value)  
+    return df
+    
 def pad_dates(df: Union[pd.Series, pd.DataFrame], **kwargs):
     """
     Parameters
@@ -394,8 +581,6 @@ def plot(aggr: pd.DataFrame, aggr_sus: Optional[pd.DataFrame] = None,
             if do_sus:
                 to_add = aggr_groups(aggr_sus)[f'daily_{entrytype}']
                 data_to_plot = data_to_plot.add(to_add, fill_value=0)
-            if not dates_padded:
-                data_to_plot = pad_dates(data_to_plot)
             if callable(tot_label):
                 tot_label = tot_label(locals())
             if cumulative:
@@ -780,7 +965,8 @@ def barstack_countries(aggr: pd.DataFrame, aggr_sus: Optional[pd.DataFrame] = No
         sel_countries = st.multiselect('Select countries to compare', all_countries, key=f'sel_{key}')
     barstack(aggr, aggr_sus=aggr_sus, values=sel_countries, key=key, st_columns=st_columns[-2:],do_sus=do_sus, **kwargs)
     
-def evolution_on_map(aggr: pd.DataFrame,  aggr_sus: Optional[pd.DataFrame] = None, 
+def evolution_on_map(aggr: pd.DataFrame,  aggr_sus: Optional[pd.DataFrame] = None,
+                     location_col: str = csv_specs.countrycol,
                      curve: Optional[str] = None, dateslice: Optional[tuple] = None,
                      do_sus: Optional[bool] = None, key: str = 'map',
                      st_columns: Optional[list] = None, min_int: int = 3, max_int: int = 15,
@@ -792,6 +978,8 @@ def evolution_on_map(aggr: pd.DataFrame,  aggr_sus: Optional[pd.DataFrame] = Non
         DataFrame with the data to plot, confirmed aggregated entrytypes
     aggr_sus: pd.DataFrame, optional
         DataFrame with the data to plot, suspected aggregated entrytypes
+    location_col: str, optional
+        column for location data. Default uses country and turns it into an ISO3
     curve: str, optional
         cumulative, daily, or rolling average. If None produces radio selector
     dateslice: tuple, optional
@@ -817,7 +1005,6 @@ def evolution_on_map(aggr: pd.DataFrame,  aggr_sus: Optional[pd.DataFrame] = Non
     None.
     """
     
-    all_countries = sorted(list(set(aggr[csv_specs.countrycol]).union(set(aggr_sus[csv_specs.countrycol]))))
     if not st_columns:
         st_columns = st.columns(4)
     i_col = -(len(st_columns))
@@ -836,7 +1023,6 @@ def evolution_on_map(aggr: pd.DataFrame,  aggr_sus: Optional[pd.DataFrame] = Non
     with st_columns[i_col]:
         fix_scale = st.checkbox('Fix color scale', value=True, key='fix_scale')
         i_col += 1
-      
     aggr = aggr.rename(columns={f'daily_{entrytype}': f'daily {entrytype}'})
     dmin, dmax = aggr.index.min(), aggr.index.max()
     if do_sus:
@@ -848,24 +1034,33 @@ def evolution_on_map(aggr: pd.DataFrame,  aggr_sus: Optional[pd.DataFrame] = Non
             dmax = st.date_input(label='End : ', value=dmax,
                             key='end', help="The end date")
     date_range = pd.date_range(start=dmin, end=dmax, freq='D')
-    new_index = pd.MultiIndex.from_product([all_countries, date_range], names=[csv_specs.countrycol, 'Date'])
-    aggr = aggr.set_index(csv_specs.countrycol, append=True).swaplevel().reindex(new_index)
+    if location_col == csv_specs.countrycol:
+        aggr[csv_specs.iso3col] = aggr[csv_specs.countrycol].map(utils.country_to_iso3)
+        aggr = aggr.groupby(csv_specs.iso3col).resample('D').sum()  # It sums countries with same ISO3 (e.g. England, Wales, Scotland, Northern Ireland)
+        if do_sus:
+            aggr_sus[csv_specs.iso3col] = aggr_sus[csv_specs.countrycol].map(utils.country_to_iso3)
+            aggr_sus = aggr_sus.groupby(csv_specs.iso3col).resample('D').sum()  # It sums countries with same ISO3 (e.g. England, Wales, Scotland, Northern Ireland)
+    all_isos = sorted(list(set(aggr.index.get_level_values(csv_specs.iso3col))))
+    if do_sus:
+        all_isos = all_isos.union(set(aggr_sus.index.get_level_values(csv_specs.iso3col)))
+    new_index = pd.MultiIndex.from_product([all_isos, date_range], names=[csv_specs.iso3col, 'Date'])
+    aggr = aggr.reindex(new_index)
     aggr[f'daily {entrytype}'] = aggr[f'daily {entrytype}'].fillna(0)
     if do_sus:
         aggr_sus.index.name = 'Date'
         aggr_sus = aggr_sus.rename(columns={f'daily_{entrytype}': f'daily {entrytype}'})
-        aggr_sus = aggr_sus.set_index(csv_specs.countrycol, append=True).swaplevel().reindex(new_index)
+        aggr_sus = aggr_sus.reindex(new_index)
         aggr_sus[f'daily {entrytype}'] = aggr_sus[f'daily {entrytype}'].fillna(0)
         aggr += aggr_sus
-    aggr['Country_ISO3'] = aggr.index.get_level_values(csv_specs.countrycol).map(utils.d_iso3)
     if curve == 'cumulative':
-        aggr[f'cumulative {entrytype}'] = aggr.groupby(csv_specs.countrycol).cumsum()[f'daily {entrytype}']
+        aggr[f'cumulative {entrytype}'] = aggr.groupby(csv_specs.iso3col).cumsum()[f'daily {entrytype}']
     aggr = aggr.reset_index()
+    aggr[csv_specs.countrycol] = aggr[csv_specs.iso3col].map(utils.iso3_to_country)
     aggr['Date'] = aggr['Date'].map(lambda x: x.strftime('%d-%m-%Y'))
     curve_col = f'{curve} {entrytype if curve != "rolling average" else ""}'.strip()
     if curve_col == 'rolling average':
         aggr['rolling average'] =  aggr[f'daily {entrytype}'].rolling(int_, win_type=win_type).mean()
-    fig = px.choropleth(aggr, locations='Country_ISO3',
+    fig = px.choropleth(aggr, locations=csv_specs.iso3col,
                         color=curve_col, 
                         hover_name=csv_specs.countrycol,
                         color_continuous_scale=color_scale if color_scale else px.colors.sequential.Plasma,

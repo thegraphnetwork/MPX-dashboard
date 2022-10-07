@@ -133,3 +133,4 @@ dmypy.json
 trying.py
 *.parquet
 lines_read.txt
+tmp/*
