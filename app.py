@@ -23,18 +23,17 @@ with st.sidebar.expander('Additional Information'):
 rawfile = 'https://raw.githubusercontent.com/globaldothealth/monkeypox/main/latest_deprecated.csv'
 
 data_load_state = st.text('Loading data...')
-# if os.path.isfile('lines_read.txt'):
-#     with open('lines_read.txt', 'r') as f:
-#         skiprows = int(f.read())
-#     data_load_state.text('Checked lines read')
-# else:
-#     skiprows = 0
-#     data_load_state.text('No lines read file')
-# new_data = load_cases(rawfile, usecols=None, skiprows=skiprows)
-# data_load_state.text('Data loaded!')
+if os.path.isfile('lines_read.txt'):
+    with open('lines_read.txt', 'r') as f:
+        skiprows = int(f.read())
+    data_load_state.text('Checked lines read')
+else:
+    skiprows = 0
+    data_load_state.text('No lines read file')
+new_data = load_cases(rawfile, usecols=None, skiprows=skiprows)
+data_load_state.text('Data loaded!')
 
-# newrows = len(new_data)
-newrows = 0
+newrows = len(new_data)
 if newrows:
     new_sus = new_data[new_data[csv_specs.statuscol] == csv_specs.statusvals['suspected']]
     new_aggr_cases = group_and_aggr(new_data, column=csv_specs.countrycol, date_col=csv_specs.confdatecol,
