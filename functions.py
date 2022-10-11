@@ -215,7 +215,7 @@ def get_country_pop_wb(year: Optional[int] = None,
     df.set_index(type_, inplace = True)
     return df['total_female_pop'] + df['total_male_pop']
 
-# @st.cache(allow_output_mutation=True)
+@st.cache(allow_output_mutation=True)
 def load_cases(file: str, skiprows: Optional[int] = None, nrows: Optional[int] = None,
                usecols: Optional[list] = None, maptobool: Optional[list] = None, **kwargs):
     """
@@ -308,6 +308,14 @@ def add_to_parquet(df: pd.DataFrame, path: str):
 
     """
     pq.write_to_dataset(pa.Table.from_pandas(df) , root_path=path)
+    
+@st.cache(allow_output_mutation=True)
+def cached_read_csv(file, **kwargs):
+    return pd.read_csv(file, **kwargs)
+
+@st.cache(allow_output_mutation=True)
+def cached_read_parquet(file, **kwargs):
+    return pd.read_parquet(file, **kwargs)
 
 def aggr_groups(df: pd.DataFrame, dates_padded: bool = True, fill_value: Any = 0):
     """
@@ -471,6 +479,134 @@ def get_colours(n: int):
     elif n < 81:
         return px.colors.qualitative.Alphabet + px.colors.qualitative.Dark24 + px.colors.qualitative.Safe + px.colors.qualitative.G10
 
+@st.cache(allow_output_mutation=True)
+def inner_plot(aggr: pd.DataFrame, daily: bool, rolling: bool, cumulative: bool,
+               values: list, plot_tot: bool,  plot_sumvals: bool, colours: list,
+               entrytype: str, do_sus: bool, tot_label: str, win_type: str,
+               column: str, dates_padded: bool, sumvals_label: str,
+               int_: Optional[int] = None, aggr_sus: Optional[pd.DataFrame] = None):
+    """
+
+    Parameters
+    ----------
+    aggr : pd.DataFrame
+        DataFrame with the data to plot, confirmed aggregated entrytypes
+    dates_padded: bool
+        if there are zeros for the days with no reported cases. 
+    values : list
+        values to consider. For instance, countries to plot as individual lines. 
+    column: str
+        column for 'values'. 
+    cumulative : bool
+        wheter to plot cumulative sum of entries.
+        If True, arguments for rolling average are ignored.
+    daily: bool
+        whether to plot daily cases. If also rolling, uses bars instead of line.
+    rolling: bool
+        whether to plot rolling average. 
+    plot_tot: bool
+        whether to plot the values from the whole dataframe (e.g. "World" if column=="Country", both genders if column="Gender")
+    tot_label: str or callable
+        label for the "total" curve. 
+        if callable, it calls the function with locals() as kwargs
+    plot_sumvals: bool
+        whether to plot the sum of the selected values f(e.g. "England + Scotland + Wales")
+    sumvals_label: str or callable
+        label for the "sum of selected values" curve. 
+        if callable, it calls the function with locals() as kwargs
+    do_sus: bool
+        whether to consider suspected entries.
+    win_type : str
+        window type for rolling average. 
+    colours: list
+        list of colours. For instance plotly.express.colors.qualitative.G10.
+        If None, combines plotly colours to get enough.
+    entrytype : str
+        the entries being plotted (cases, deaths, hospitaliastions...)
+    do_sus : bool
+        whther to plot suspected cases.
+    int_: int, optional
+        interval for running average.
+    aggr_sus: pd.DataFrame, optional
+        DataFrame with the data to plot, suspected aggregated entrytypes
+        
+    Returns
+    -------
+    fig : plotly.go.Figure()
+        the figure to pass to streamlit
+
+    """
+    fig = go.Figure()  
+    plotfunc = go.Bar if daily and rolling else go.Scatter
+    ncurves = len(values) + 1 if plot_tot else 0 + 1 if plot_sumvals else 0
+    if colours:
+        if len(colours) < ncurves:
+            raise ValueError('You did not provide enough colours for your data!')
+    else:
+        colours = get_colours(ncurves)
+    colour_index = 0
+    if plot_tot:
+        data_to_plot = aggr_groups(aggr)[f'daily_{entrytype}']
+        if do_sus:
+            to_add = aggr_groups(aggr_sus)[f'daily_{entrytype}']
+            data_to_plot = data_to_plot.add(to_add, fill_value=0)
+        if callable(tot_label):
+            tot_label = tot_label(locals())
+        if cumulative:
+            data_to_plot = data_to_plot.cumsum()
+            fig.add_trace(go.Scatter(x=data_to_plot.index, y=data_to_plot.values, marker_color=colours[colour_index], name=f'{tot_label}'))
+        else:
+            if daily:
+                fig.add_trace(plotfunc(x=data_to_plot.index, y=data_to_plot.values, marker_color=colours[colour_index], opacity=0.75 if daily else 1, name=f'{tot_label}'))
+            if rolling:
+                ravg = data_to_plot.rolling(int_, win_type=win_type).mean()
+                fig.add_trace(go.Scatter(x=ravg.index, y=ravg.values, marker_color=colours[colour_index], opacity=0.5, name=f'{tot_label}, rolling average'))
+        colour_index += 1
+    if plot_sumvals:
+        data_to_plot = aggr_groups(aggr[aggr[column].isin(values)])[f'daily_{entrytype}'] if plot_tot else aggr_groups(aggr)[f'daily_{entrytype}']  # if not plot_tot we already filtered
+        if do_sus:
+            to_add = aggr_groups(aggr_sus[aggr_sus[column].isin(values)])[f'daily_{entrytype}'] if plot_tot else aggr_groups(aggr_sus)[f'daily_{entrytype}']  # if not plot_tot we already filtered
+            data_to_plot = data_to_plot.add(to_add, fill_value=0)
+        if not dates_padded:
+            data_to_plot = pad_dates(data_to_plot)
+        if callable(sumvals_label):
+            sumvals_label = sumvals_label(locals())
+        if cumulative:
+            data_to_plot = data_to_plot.cumsum()
+            fig.add_trace(go.Scatter(x=data_to_plot.index, y=data_to_plot.values, marker_color=colours[colour_index], name=f'{sumvals_label}'))
+        else:
+            if daily:
+                fig.add_trace(plotfunc(x=data_to_plot.index, y=data_to_plot.values, marker_color=colours[colour_index], opacity=0.75 if daily else 1, name=f'{sumvals_label}'))
+            if rolling:
+                ravg = data_to_plot.rolling(int_, win_type=win_type).mean()
+                fig.add_trace(go.Scatter(x=ravg.index, y=ravg.values, marker_color=colours[colour_index], opacity=0.5, name=f'{sumvals_label}, rolling average'))
+        colour_index += 1
+    for n,value in enumerate(values):
+        if pd.isna(value):
+            data_to_plot = aggr[aggr[column].isna()][f'daily_{entrytype}']
+            if do_sus:
+                to_add = aggr_sus[aggr_sus[column].isna()][f'daily_{entrytype}']
+                data_to_plot = data_to_plot.add(to_add, fill_value=0)
+        else:
+            data_to_plot = aggr[aggr[column] == value][f'daily_{entrytype}']
+            if do_sus:
+                # st.dataframe(aggr_sus)
+                to_add = aggr_sus[aggr_sus[column] == value][f'daily_{entrytype}']
+                data_to_plot = data_to_plot.add(to_add, fill_value=0)
+        if not dates_padded:
+            data_to_plot = pad_dates(data_to_plot)
+        if cumulative:
+            data_to_plot = data_to_plot.cumsum()
+            fig.add_trace(go.Scatter(x=data_to_plot.index, y=data_to_plot.values, marker_color=colours[colour_index + n], name=f'{value}'))
+        else:
+            if daily:
+                fig.add_trace(plotfunc(x=data_to_plot.index, y=data_to_plot.values, marker_color=colours[colour_index + n], opacity=0.75 if daily else 1, name=f'{value}'))
+            if rolling:
+                ravg = data_to_plot.rolling(int_, win_type=win_type).mean()
+                if ravg.notna().values.any():  # not to plot only nans
+                    fig.add_trace(go.Scatter(x=ravg.index, y=ravg.values, marker_color=colours[colour_index + n], opacity=0.5, name=f'{value}, rolling average'))
+    return fig
+
 def plot(aggr: pd.DataFrame, aggr_sus: Optional[pd.DataFrame] = None,
          dates_padded: bool = False,
          values: list = [], column: str =csv_specs.countrycol,
@@ -484,7 +620,8 @@ def plot(aggr: pd.DataFrame, aggr_sus: Optional[pd.DataFrame] = None,
     """
     Note
     ----
-    Uses streamlit user input to further select the data and plots it.
+    Uses streamlit user input to further select the data and plots it. 
+    Hence this part cannot be cached. The inner function is cached not to repeat plotting.
     
     Parameters
     ----------
@@ -567,75 +704,12 @@ def plot(aggr: pd.DataFrame, aggr_sus: Optional[pd.DataFrame] = None,
         if not cumulative and rolling:
             with st_columns[i_col]:
                 int_ = st.number_input('Rolling average interval', min_value=min_int, max_value=max_int, value=default, key=key)
-        fig = go.Figure()  
-        plotfunc = go.Bar if daily and rolling else go.Scatter
-        ncurves = len(values) + 1 if plot_tot else 0 + 1 if plot_sumvals else 0
-        if colours:
-            if len(colours) < ncurves:
-                raise ValueError('You did not provide enough colours for your data!')
         else:
-            colours = get_colours(ncurves)
-        colour_index = 0
-        if plot_tot:
-            data_to_plot = aggr_groups(aggr)[f'daily_{entrytype}']
-            if do_sus:
-                to_add = aggr_groups(aggr_sus)[f'daily_{entrytype}']
-                data_to_plot = data_to_plot.add(to_add, fill_value=0)
-            if callable(tot_label):
-                tot_label = tot_label(locals())
-            if cumulative:
-                data_to_plot = data_to_plot.cumsum()
-                fig.add_trace(go.Scatter(x=data_to_plot.index, y=data_to_plot.values, marker_color=colours[colour_index], name=f'{tot_label}'))
-            else:
-                if daily:
-                    fig.add_trace(plotfunc(x=data_to_plot.index, y=data_to_plot.values, marker_color=colours[colour_index], opacity=0.75 if daily else 1, name=f'{tot_label}'))
-                if rolling:
-                    ravg = data_to_plot.rolling(int_, win_type=win_type).mean()
-                    fig.add_trace(go.Scatter(x=ravg.index, y=ravg.values, marker_color=colours[colour_index], opacity=0.5, name=f'{tot_label}, rolling average'))
-            colour_index += 1
-        if plot_sumvals:
-            data_to_plot = aggr_groups(aggr[aggr[column].isin(values)])[f'daily_{entrytype}'] if plot_tot else aggr_groups(aggr)[f'daily_{entrytype}']  # if not plot_tot we already filtered
-            if do_sus:
-                to_add = aggr_groups(aggr_sus[aggr_sus[column].isin(values)])[f'daily_{entrytype}'] if plot_tot else aggr_groups(aggr_sus)[f'daily_{entrytype}']  # if not plot_tot we already filtered
-                data_to_plot = data_to_plot.add(to_add, fill_value=0)
-            if not dates_padded:
-                data_to_plot = pad_dates(data_to_plot)
-            if callable(sumvals_label):
-                sumvals_label = sumvals_label(locals())
-            if cumulative:
-                data_to_plot = data_to_plot.cumsum()
-                fig.add_trace(go.Scatter(x=data_to_plot.index, y=data_to_plot.values, marker_color=colours[colour_index], name=f'{sumvals_label}'))
-            else:
-                if daily:
-                    fig.add_trace(plotfunc(x=data_to_plot.index, y=data_to_plot.values, marker_color=colours[colour_index], opacity=0.75 if daily else 1, name=f'{sumvals_label}'))
-                if rolling:
-                    ravg = data_to_plot.rolling(int_, win_type=win_type).mean()
-                    fig.add_trace(go.Scatter(x=ravg.index, y=ravg.values, marker_color=colours[colour_index], opacity=0.5, name=f'{sumvals_label}, rolling average'))
-            colour_index += 1
-        for n,value in enumerate(values):
-            if pd.isna(value):
-                data_to_plot = aggr[aggr[column].isna()][f'daily_{entrytype}']
-                if do_sus:
-                    to_add = aggr_sus[aggr_sus[column].isna()][f'daily_{entrytype}']
-                    data_to_plot = data_to_plot.add(to_add, fill_value=0)
-            else:
-                data_to_plot = aggr[aggr[column] == value][f'daily_{entrytype}']
-                if do_sus:
-                    # st.dataframe(aggr_sus)
-                    to_add = aggr_sus[aggr_sus[column] == value][f'daily_{entrytype}']
-                    data_to_plot = data_to_plot.add(to_add, fill_value=0)
-            if not dates_padded:
-                data_to_plot = pad_dates(data_to_plot)
-            if cumulative:
-                data_to_plot = data_to_plot.cumsum()
-                fig.add_trace(go.Scatter(x=data_to_plot.index, y=data_to_plot.values, marker_color=colours[colour_index + n], name=f'{value}'))
-            else:
-                if daily:
-                    fig.add_trace(plotfunc(x=data_to_plot.index, y=data_to_plot.values, marker_color=colours[colour_index + n], opacity=0.75 if daily else 1, name=f'{value}'))
-                if rolling:
-                    ravg = data_to_plot.rolling(int_, win_type=win_type).mean()
-                    if ravg.notna().values.any():  # not to plot only nans
-                        fig.add_trace(go.Scatter(x=ravg.index, y=ravg.values, marker_color=colours[colour_index + n], opacity=0.5, name=f'{value}, rolling average'))
+            int_ = None
+        fig = inner_plot(aggr, daily, rolling, cumulative, values, plot_tot,
+                         plot_sumvals, colours, entrytype, do_sus, tot_label,
+                         win_type, column, dates_padded, sumvals_label, int_=int_,
+                         aggr_sus=aggr_sus)
         if fig['data']:
             fig['data'][0]['showlegend'] = True
             st.plotly_chart(fig, use_container_width=True)
@@ -643,7 +717,7 @@ def plot(aggr: pd.DataFrame, aggr_sus: Optional[pd.DataFrame] = None,
             st.markdown('Not enough data for rolling average')
     else:
         st.markdown(f'No reported {entrytype} match the search criteria.')
-    
+
 def plot_countries(aggr: pd.DataFrame, aggr_sus: Optional[pd.DataFrame] = None,
                    key: str = 'countries', cumulative: Optional[bool] = None,
                    daily: Optional[bool] = None, rolling: Optional[bool] = None,

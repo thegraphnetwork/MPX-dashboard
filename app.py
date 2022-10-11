@@ -1,9 +1,9 @@
 import streamlit as st
 import csv_specs
 import os
-import pandas as pd
+# import pandas as pd
 from functions import load_cases, group_and_aggr, total_weekly_metrics, plot_tot, plot_countries, \
-    evolution_on_map, barstack_countries, add_to_parquet, get_country_pop_egh
+    evolution_on_map, barstack_countries, add_to_parquet, get_country_pop_egh, cached_read_csv, cached_read_parquet
     
 TITLE = 'Monkey Pox Evolution'
 st.set_page_config(page_title=TITLE,
@@ -55,15 +55,15 @@ if newrows:
         f.write(f'{skiprows + newrows}')
     data_load_state.text('Updated lines read!')
 
-cases = pd.read_parquet('cases.parquet')
-sus_cases = pd.read_parquet('sus_cases.parquet')
-deaths = pd.read_parquet('deaths.parquet')
-sus_deaths = pd.read_parquet('sus_deaths.parquet')
+cases = cached_read_parquet('cases.parquet')
+sus_cases = cached_read_parquet('sus_cases.parquet')
+deaths = cached_read_parquet('deaths.parquet')
+sus_deaths = cached_read_parquet('sus_deaths.parquet')
 data_load_state.text('Read aggregated data!')
 
 all_countries = sorted(list(set(cases[csv_specs.countrycol]).union(set(sus_cases[csv_specs.countrycol]))))
 if os.path.isfile('population.csv'):
-    population = pd.read_csv('population.csv',index_col=0).iloc[:,0]
+    population = cached_read_csv('population.csv',index_col=0).iloc[:,0]
     data_load_state.text('Read population!')
 else:
     data_load_state.text('Loading population data!')
