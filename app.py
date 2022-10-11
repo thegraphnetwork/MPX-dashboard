@@ -31,6 +31,7 @@ else:
     skiprows = 0
     data_load_state.text('No lines read file')
 new_data = load_cases(rawfile, usecols=None, skiprows=skiprows)
+
 data_load_state.text('Data loaded!')
 
 newrows = len(new_data)
