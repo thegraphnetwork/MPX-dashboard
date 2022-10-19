@@ -23,15 +23,38 @@ with st.sidebar.expander('Additional Information'):
 rawfile = 'https://raw.githubusercontent.com/globaldothealth/monkeypox/main/latest_deprecated.csv'
 
 data_load_state = st.text('Loading data...')
-# if os.path.isfile('lines_read.txt'):
-#     with open('lines_read.txt', 'r') as f:
-#         skiprows = int(f.read())
-#     data_load_state.text('Checked lines read')
-# else:
-#     skiprows = 0
-#     data_load_state.text('No lines read file')
-# new_data = load_cases(rawfile, usecols=None, skiprows=skiprows)
-# data_load_state.text('Data loaded!')
+if os.path.isfile('lines_read.txt'):
+    with open('lines_read.txt', 'r') as f:
+        skiprows = int(f.read())
+    data_load_state.text('Checked lines read')
+else:
+    skiprows = 0
+    data_load_state.text('No lines read file')
+new_data = load_cases(rawfile, usecols=None, skiprows=skiprows)
+
+data_load_state.text('Data loaded!')
+
+newrows = len(new_data)
+if newrows:
+    new_sus = new_data[new_data[csv_specs.statuscol] == csv_specs.statusvals['suspected']]
+    new_aggr_cases = group_and_aggr(new_data, column=csv_specs.countrycol, date_col=csv_specs.confdatecol,
+                        dropna=True, entrytype='cases', dropzeros=True)
+    add_to_parquet(new_aggr_cases, 'cases.parquet')
+    new_aggr_sus_cases = group_and_aggr(new_sus, column=csv_specs.countrycol, date_col=csv_specs.entrydatecol,
+                        dropna=True, entrytype='cases', dropzeros=True)
+    add_to_parquet(new_aggr_sus_cases, 'sus_cases.parquet')
+    new_aggr_deaths = group_and_aggr(new_data, column=csv_specs.countrycol, date_col=csv_specs.deathdatecol,
+                        dropna=True, entrytype='deaths', dropzeros=True)
+    add_to_parquet(new_aggr_deaths, 'deaths.parquet')
+    new_aggr_sus_deaths = group_and_aggr(new_sus[new_sus[csv_specs.outcomecol] == csv_specs.outcomevals['death']], column=csv_specs.countrycol,
+                                         date_col=csv_specs.deathdatecol, # NB. there are some deaths with no deathdate. 
+                                         # right now they are being excluded. We could plot them with the date of entry or of last modification
+                                         dropna=True, entrytype='deaths', dropzeros=True)
+    add_to_parquet(new_aggr_sus_deaths, 'sus_deaths.parquet')
+    data_load_state.text('Aggregated data saved')
+    with open('lines_read.txt', 'w') as f:
+        f.write(f'{skiprows + newrows}')
+    data_load_state.text('Updated lines read!')
 
 # newrows = len(new_data)
 # if newrows:
