@@ -20,8 +20,10 @@ from epigraphhub.settings import env
 from epigraphhub.connection import get_engine
 import wbgapi as wb
 
-def cols_to_dict(df:pd.DataFrame, a: str, b: str):
+def cols_to_dict(df:pd.DataFrame, a: str, b: str) -> dict :
     """
+    Obtains a dictionary based on correspondence between two columns, for instance country names and ISO3 codes
+    
     Parameters
     ----------
     df: pd.DataFrame
@@ -40,8 +42,11 @@ def cols_to_dict(df:pd.DataFrame, a: str, b: str):
 
 is_bijective: lambda x: len(set(x.keys())) == len(set(x.values()))  # whether dictionary is bijective/reversible
 
-def keys_same_val(dict_: dict):
+def keys_same_val(dict_: dict) -> dict:
     """
+    Finds all keys in a dictionary that have the same values. 
+    Useful to check if a dictionary can be inverted, or make it invertable.
+    
     Parameters
     ----------
     dict_ : dict
@@ -60,20 +65,24 @@ def keys_same_val(dict_: dict):
         to_return[dup] = s[s == dup].index.tolist()
     return to_return
     
-def get_locality_names():
+def get_locality_names() -> pd.DataFrame:
     """
     Returns
     -------
     pd.DataFrame
-        description of the location_key values
+        description of the location_key values (google API)
 
     """
     return pd.read_sql_table('locality_names_0',
                              get_engine(env.db.default_credential),
                              schema = 'google_health')
 
-def location_name_to_location_key(loc: str, loc_table: Optional[pd.DataFrame] = None):
+def location_name_to_location_key(loc: str, loc_table: Optional[pd.DataFrame] = None) -> str:
     """
+    Tries to convert location name to location key, starting from countries and going to smaller entities.
+    N. B. it may have issues due to different spelling or language (Cabo Verde/Cape Verde) and multiple places with same name
+    (cities named as regions, etc...). Consider as helpful but not infallible.
+    
     Parameters
     ----------
     loc : str
@@ -82,7 +91,7 @@ def location_name_to_location_key(loc: str, loc_table: Optional[pd.DataFrame] = 
     Returns
     -------
     str
-        location id (as in google api).
+        location id (as in google API).
 
     """
     if loc_table is None:
@@ -100,25 +109,37 @@ def location_name_to_location_key(loc: str, loc_table: Optional[pd.DataFrame] = 
     if loc in locs3['locality_name'].values:
         return locs3[locs3['locality_name'] == loc]['location_key'].iloc[0]
     
-# def get_iso2_to_iso3():
-#     df = get_locality_names()
-#     return cols_to_dict(df, 'iso_3166_1_alpha_2', 'iso_3166_1_alpha_3')
+def get_iso2_to_iso3() -> dict:
+    """
+    Legacy, now this dictionary is available in utils
+
+    Returns
+    -------
+    dict
+        dictionary of iso2 to iso3.
+
+    """
+    df = get_locality_names()
+    return cols_to_dict(df, 'iso_3166_1_alpha_2', 'iso_3166_1_alpha_3')
 
 @st.cache(allow_output_mutation=True)
-def get_demographics_egh():
+def get_demographics_egh() -> pd.DataFrame:
     """
 
     Returns
     -------
     pd.Dataframe
-        the demographics table
+        the demographics table from the google API
 
     """
     return pd.read_sql_table('demographics', 
                              get_engine(env.db.default_credential),
                              schema = 'google_health')
-def get_country_pop_egh(loclist: Optional[list] = None, type_: str = 'country'):
+
+def get_country_pop_egh(loclist: Optional[list] = None, type_: str = 'country') -> pd.Series:
     """
+    Gets the population for all countries required, from google API
+    
     Parameters
     ----------
     loclist : Optional[list], optional
@@ -131,7 +152,8 @@ def get_country_pop_egh(loclist: Optional[list] = None, type_: str = 'country'):
     Returns
     -------
     pd.Series
-        the total population for each country in loclist, index is as loclist, according to type_
+        the total population for each country in loclist, index is as loclist, according to type_,
+        from the google API
 
     """
     pop = get_demographics_egh()
@@ -151,7 +173,7 @@ def get_country_pop_egh(loclist: Optional[list] = None, type_: str = 'country'):
 
 @st.cache(allow_output_mutation=True)
 def get_wb_data(time: str, ind: Union[str, list] = ["SP.POP.TOTL.FE.IN", "SP.POP.TOTL.MA.IN"],
-                country: Union[list, str] = 'all'):
+                country: Union[list, str] = 'all') -> pd.DataFrame:
     """
     Parameters
     ----------
@@ -165,13 +187,13 @@ def get_wb_data(time: str, ind: Union[str, list] = ["SP.POP.TOTL.FE.IN", "SP.POP
     Returns
     -------
     pd.DataFrame
-        the requested table.
+        the requested table from the world bank.
 
     """
     return wb.data.DataFrame(series=ind, economy=country, db=2, time=time)
     
 def get_country_pop_wb(year: Optional[int] = None,
-                    loclist: Optional[list] = None, type_: str = 'country'):
+                    loclist: Optional[list] = None, type_: str = 'country') -> pd.Series:
     """
     Parameters
     ----------
@@ -186,7 +208,8 @@ def get_country_pop_wb(year: Optional[int] = None,
     Returns
     -------
     pd.Series
-        the total population for each country in loclist, index is as loclist, according to type_
+        the total population for each country in loclist, index is as loclist, according to type_,
+        from the world bank.
     """
     if year == None:
         year = pd.to_datetime('today').year
@@ -217,8 +240,10 @@ def get_country_pop_wb(year: Optional[int] = None,
 
 @st.cache(allow_output_mutation=True)
 def load_cases(file: str, skiprows: Optional[int] = None, nrows: Optional[int] = None,
-               usecols: Optional[list] = None, maptobool: Optional[list] = None, **kwargs):
+               usecols: Optional[list] = None, maptobool: Optional[list] = None, **kwargs) -> pd.DataFrame:
     """
+    Reads disaggregated (case by case) data, dealing with type.
+    
     Parameters
     ----------
     file: str
@@ -257,8 +282,10 @@ def load_cases(file: str, skiprows: Optional[int] = None, nrows: Optional[int] =
     return cases 
 
 def group_and_aggr(df: pd.DataFrame, column: str = csv_specs.countrycol, date_col: str = csv_specs.confdatecol,
-                   dropna: bool = True, entrytype: str = 'cases',dropzeros: bool = True):
+                   dropna: bool = True, entrytype: str = 'cases',dropzeros: bool = True) -> pd.DataFrame:
     """
+    Aggregates data based on a specific column (generally country) and a date column (reporting, confirmation, death...)
+    
     Parameters
     ----------
     df : pd.DataFrame
@@ -276,8 +303,8 @@ def group_and_aggr(df: pd.DataFrame, column: str = csv_specs.countrycol, date_co
 
     Returns
     -------
-    agg : TYPE
-        DESCRIPTION.
+    agg : pd.DataFrame
+        the aggregated dataframe (reported entries per date per country).
 
     """
     daily_col = f'daily_{entrytype}'
@@ -293,8 +320,10 @@ def group_and_aggr(df: pd.DataFrame, column: str = csv_specs.countrycol, date_co
             agg = agg.loc[agg[daily_col] != 0]
     return agg
 
-def add_to_parquet(df: pd.DataFrame, path: str):
+def add_to_parquet(df: pd.DataFrame, path: str) -> None:
     """
+    Appends to parquet file
+    
     Parameters
     ----------
     df : pd.DataFrame
@@ -310,15 +339,47 @@ def add_to_parquet(df: pd.DataFrame, path: str):
     pq.write_to_dataset(pa.Table.from_pandas(df) , root_path=path)
     
 @st.cache(allow_output_mutation=True)
-def cached_read_csv(file, **kwargs):
+def cached_read_csv(file: str, **kwargs) -> pd.DataFrame:
+    """
+    cached version of pd.read_csv
+
+    Parameters
+    ----------
+    file : str
+        file for pd.read_csv.
+    **kwargs : dict 
+        any argument for pd.read_csv
+
+    Returns
+    -------
+    pd.DataFrame
+        the content of the csv file
+    """
     return pd.read_csv(file, **kwargs)
 
 @st.cache(allow_output_mutation=True)
-def cached_read_parquet(file, **kwargs):
+def cached_read_parquet(file, **kwargs) -> pd.DataFrame:
+    """
+    cached version of pd.read_parquet
+
+    Parameters
+    ----------
+    file : str
+        file for pd.read_parquet.
+    **kwargs : dict 
+        any argument for pd.read_parquet
+
+    Returns
+    -------
+    pd.DataFrame
+        the content of the parquet file
+    """
     return pd.read_parquet(file, **kwargs)
 
-def aggr_groups(df: pd.DataFrame, dates_padded: bool = True, fill_value: Any = 0):
+def aggr_groups(df: pd.DataFrame, dates_padded: bool = True, fill_value: Any = 0) -> pd.DataFrame:
     """
+    Aggregates all groups (but not dates) in a dataframe. e.g. global cases by aggregating countries
+    
     Parameters
     ----------
     df : pd.DataFrame
@@ -328,7 +389,6 @@ def aggr_groups(df: pd.DataFrame, dates_padded: bool = True, fill_value: Any = 0
     fill_value : Any, optional
         value for fillna. The default is 0. Use None to keep NaN.
         Only matters if dates_padded == True
-    
 
     Returns
     -------
@@ -343,8 +403,9 @@ def aggr_groups(df: pd.DataFrame, dates_padded: bool = True, fill_value: Any = 0
             df = df.fillna(fill_value)  
     return df
     
-def pad_dates(df: Union[pd.Series, pd.DataFrame], **kwargs):
+def pad_dates(df: Union[pd.Series, pd.DataFrame], **kwargs) -> Union[pd.DataFrame, pd.Series]:
     """
+    avoids gaps in date ranges by resampling daily and putting a desired value as filling NAs
     Parameters
     ----------
     df : pd.Series, pd.DataFrame
@@ -364,7 +425,7 @@ def pad_dates(df: Union[pd.Series, pd.DataFrame], **kwargs):
     return df.asfreq('D').fillna(**kwargs)
 
 @st.cache()
-def get_daily_count(df: pd.DataFrame, index_col: str):
+def get_daily_count(df: pd.DataFrame, index_col: str)  -> pd.Series:
     """
     Parameters
     ----------
@@ -381,7 +442,7 @@ def get_daily_count(df: pd.DataFrame, index_col: str):
     count_col = df.columns[0]
     return df.set_index(index_col)[count_col].resample('D').count()
 
-def na_percentage(df: pd.DataFrame):
+def na_percentage(df: pd.DataFrame) -> pd.DataFrame:
     """
     Parameters
     ----------
@@ -404,8 +465,9 @@ def na_percentage(df: pd.DataFrame):
     return pd.DataFrame(pd.Series(dict_, name='percentage_nans'))
 
 def total_weekly_metrics(aggr: pd.DataFrame, aggr_sus: Optional[pd.DataFrame] = None,
-                         do_sus: Optional[bool] = None, key='metrics'):
+                         do_sus: Optional[bool] = None, key='metrics') -> None:
     """
+    Creates streamlit widgets for weekly metrics.
     Parameters
     ----------
     aggr : pd.DataFrame
@@ -453,8 +515,9 @@ def total_weekly_metrics(aggr: pd.DataFrame, aggr_sus: Optional[pd.DataFrame] = 
     cols[0].metric(label=f'Total {entrytype}', value=tot)
     cols[1].metric(label=f'{entrytype.capitalize()} in the last 7 days', value=last_week, delta=f'{last_week-previous_week}')  # convert to string because delta does not accept np.int64
             
-def get_colours(n: int):
+def get_colours(n: int)  -> list:
     """
+    Gets an appropriate list of n colours.
     Parameters
     ----------
     n : int
@@ -484,8 +547,9 @@ def inner_plot(aggr: pd.DataFrame, daily: bool, rolling: bool, cumulative: bool,
                values: list, plot_tot: bool,  plot_sumvals: bool, colours: list,
                entrytype: str, do_sus: bool, tot_label: str, win_type: str,
                column: str, dates_padded: bool, sumvals_label: str,
-               int_: Optional[int] = None, aggr_sus: Optional[pd.DataFrame] = None):
+               int_: Optional[int] = None, aggr_sus: Optional[pd.DataFrame] = None) -> go.Figure:
     """
+    Returns the figure to pass to streamlit. 
 
     Parameters
     ----------
@@ -616,10 +680,8 @@ def plot(aggr: pd.DataFrame, aggr_sus: Optional[pd.DataFrame] = None,
          plot_sumvals: bool = False, sumvals_label: Union[str, callable] = 'Sum of selected countries',
          do_sus: Optional[bool] = None, key: str = 'only', min_int: int = 3,
          max_int: int = 15, default: int = 7, win_type: Optional[str] = 'exponential',
-         colours: Optional[list] = None, st_columns: list = []):
+         colours: Optional[list] = None, st_columns: list = []) -> None:
     """
-    Note
-    ----
     Uses streamlit user input to further select the data and plots it. 
     Hence this part cannot be cached. The inner function is cached not to repeat plotting.
     
@@ -721,10 +783,8 @@ def plot(aggr: pd.DataFrame, aggr_sus: Optional[pd.DataFrame] = None,
 def plot_countries(aggr: pd.DataFrame, aggr_sus: Optional[pd.DataFrame] = None,
                    key: str = 'countries', cumulative: Optional[bool] = None,
                    daily: Optional[bool] = None, rolling: Optional[bool] = None,
-                   do_sus: Optional[bool] = None, **kwargs):
+                   do_sus: Optional[bool] = None, **kwargs) -> None:
     """
-    Note
-    ----
     Plots countries selected by the user
 
     Parameters
@@ -768,11 +828,9 @@ def plot_countries(aggr: pd.DataFrame, aggr_sus: Optional[pd.DataFrame] = None,
 def plot_tot(aggr: pd.DataFrame, aggr_sus: Optional[pd.DataFrame] = None,
              label: str = '', key: str = 'tot', colour: str = 'black',
              cumulative: Optional[bool] = None, daily: Optional[bool] = None,
-             rolling: Optional[bool] = None, do_sus: Optional[bool] = None, **kwargs):
+             rolling: Optional[bool] = None, do_sus: Optional[bool] = None, **kwargs)  -> None:
     
     """
-    Note
-    ----
     plots the whole dataframe according to the selection criteria
 
     Parameters
@@ -812,10 +870,8 @@ def plot_tot(aggr: pd.DataFrame, aggr_sus: Optional[pd.DataFrame] = None,
 def plot_genders(aggr: pd.DataFrame, aggr_sus: Optional[pd.DataFrame] = None,
                  key: str = 'genders', cumulative: Optional[bool] = None,
                  daily: Optional[bool] = None, rolling: Optional[bool] = None,
-                 do_sus: Optional[bool] = None, **kwargs):
+                 do_sus: Optional[bool] = None, **kwargs) -> None:
     """
-    Note
-    ----
     Plots curves for each gender
 
     Parameters
@@ -849,10 +905,8 @@ def plot_genders(aggr: pd.DataFrame, aggr_sus: Optional[pd.DataFrame] = None,
     
 def plot_outcome(aggr: pd.DataFrame, aggr_sus: Optional[pd.DataFrame] = None,
                  include_nan: bool = True, key: str = 'outcome',
-                 do_sus: Optional[bool] = None, **kwargs):
+                 do_sus: Optional[bool] = None, **kwargs) -> None:
     """
-    Note
-    ----
     Plots the outcome of cases
 
     Parameters
@@ -881,10 +935,8 @@ def plot_outcome(aggr: pd.DataFrame, aggr_sus: Optional[pd.DataFrame] = None,
 
 def plot_needed_hospital(aggr: pd.DataFrame, aggr_sus: Optional[pd.DataFrame] = None,
                          include_nan: bool = True, key: str = 'hospitalised',
-                         do_sus: Optional[bool] = None, **kwargs):
+                         do_sus: Optional[bool] = None, **kwargs) -> None:
     """
-    Note
-    ----
     Plots how many cases needed hospitalisation
 
     Parameters
@@ -916,10 +968,8 @@ def barstack(aggr: pd.DataFrame, aggr_sus: Optional[pd.DataFrame] = None,
              column: str =csv_specs.countrycol, cumulative: Optional[bool] = None,
              daily: bool = True, do_sus: Optional[bool] = None,
              key: str = 'barstack', colours: Optional[list] = None,
-             st_columns: list = []):
+             st_columns: list = []) -> None:
     """
-    Note
-    ----
     Uses streamlit user input to further select the data and plots it.
     
     Parameters
@@ -1007,10 +1057,8 @@ def barstack(aggr: pd.DataFrame, aggr_sus: Optional[pd.DataFrame] = None,
 
 def barstack_countries(aggr: pd.DataFrame, aggr_sus: Optional[pd.DataFrame] = None,
                        key: str = 'barstack_countries', cumulative: Optional[bool] = None,
-                       do_sus: Optional[bool] = None, **kwargs):
+                       do_sus: Optional[bool] = None, **kwargs) -> None:
     """
-    Note
-    ----
     Plots countries selected by the user
 
     Parameters
@@ -1044,8 +1092,10 @@ def evolution_on_map(aggr: pd.DataFrame,  aggr_sus: Optional[pd.DataFrame] = Non
                      curve: Optional[str] = None, dateslice: Optional[tuple] = None,
                      do_sus: Optional[bool] = None, key: str = 'map',
                      st_columns: Optional[list] = None, min_int: int = 3, max_int: int = 15,
-                     default: int = 7, win_type: Optional[str] = 'exponential', color_scale: Union[str, list] = None):
+                     default: int = 7, win_type: Optional[str] = 'exponential',
+                     color_scale: Union[str, list] = None) -> None:
     """
+    Plots entries on  a map
     Parameters
     ----------
     aggr : pd.DataFrame
@@ -1143,7 +1193,7 @@ def evolution_on_map(aggr: pd.DataFrame,  aggr_sus: Optional[pd.DataFrame] = Non
     st.plotly_chart(fig, use_container_width=True)
 
 def delay_distr(df: pd.DataFrame, date_col1: str = csv_specs.confdatecol,
-                date_col2: str = csv_specs.entrydatecol):
+                date_col2: str = csv_specs.entrydatecol) -> None:
     """
     Parameters
     ----------

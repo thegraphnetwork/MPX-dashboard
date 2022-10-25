@@ -134,3 +134,5 @@ trying.py
 *.parquet
 lines_read.txt
 tmp/*
+tmp.txt
+
