@@ -2,8 +2,9 @@ import streamlit as st
 from mpx_dashboard import csv_specs
 import os
 # import pandas as pd
-from mpx_dashboard.functions import total_weekly_metrics, plot_tot, plot_countries, \
-    evolution_on_map, barstack_countries, cached_read_csv, cached_read_parquet
+from mpx_dashboard.plotting import total_weekly_metrics, plot_tot, plot_countries, \
+    evolution_on_map, barstack_countries
+from mpx_dashboard.read_write import cached_read_csv, cached_read_parquet
     
 TITLE = 'Monkey Pox Evolution'
 st.set_page_config(page_title=TITLE,
