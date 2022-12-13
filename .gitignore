@@ -128,11 +128,5 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# Others
-
-trying.py
-*.parquet
-lines_read.txt
-tmp/*
-tmp.txt
-
+# pycharm
+.idea/
