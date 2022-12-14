@@ -21,6 +21,7 @@ with st.sidebar.expander('Additional Information'):
     st.markdown('Data from [Global.Health](https://github.com/globaldothealth/monkeypox "https://github.com/globaldothealth/monkeypox")')
     st.markdown('Rolling averages use an exponential weighing of the data.')
 
+st.sidebar.markdown("Powered by [EpiGraphHub](https://epigraphhub.org)")
 rawfile = 'https://raw.githubusercontent.com/globaldothealth/monkeypox/main/latest_deprecated.csv'
 
 data_load_state = st.text('Loading data...')
