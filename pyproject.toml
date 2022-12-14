@@ -13,6 +13,7 @@ numpy = "^1.22.2"
 SQLAlchemy = "^1.4.31"
 psycopg2-binary = "^2.9.3"
 plotly = "^5.10.0"
+epigraphhub = "*"
 
 [tool.poetry.dev-dependencies]
 
