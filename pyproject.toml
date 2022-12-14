@@ -1,9 +1,10 @@
 [tool.poetry]
-name = "streamlit-docker-template"
+name = "mpx-dashboard"
 version = "0.1.0"
-description = ""
-authors = ["Flávio Codeço Coelho <fccoelho@gmail.com>"]
+description = "Dashboard based on daily updated Monkeypox case and death records, facilitating the visualization og the global dynamics of this disease."
+authors = ["Flávio Codeço Coelho <fccoelho@gmail.com>", "Nico Ricardi <ricardiniccolo@gmail.com>"
 license = "MIT"
+packages = [{include='mpx_dashboard'}]
 
 [tool.poetry.dependencies]
 python = "^3.9"
@@ -20,3 +21,4 @@ epigraphhub = "*"
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
+
