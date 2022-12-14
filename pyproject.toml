@@ -7,7 +7,7 @@ license = "MIT"
 packages = [{include='mpx_dashboard'}]
 
 [tool.poetry.dependencies]
-python = "^3.9"
+python = ">=3.9,<3.11"
 streamlit = "^1.5.1"
 pandas = "^1.4.1"
 numpy = "^1.22.2"

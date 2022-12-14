@@ -6,7 +6,7 @@ from mpx_dashboard.plotting import total_weekly_metrics, plot_tot, plot_countrie
     evolution_on_map, barstack_countries
 from mpx_dashboard.read_write import cached_read_csv, cached_read_parquet
     
-TITLE = 'Monkey Pox Evolution'
+TITLE = 'Global Monkey Pox Evolution'
 st.set_page_config(page_title=TITLE,
                     page_icon=':chart:',
                     layout='wide',
@@ -24,7 +24,7 @@ with st.sidebar.expander('Additional Information'):
 rawfile = 'https://raw.githubusercontent.com/globaldothealth/monkeypox/main/latest_deprecated.csv'
 
 data_load_state = st.text('Loading data...')
-folder = '/home/nr/WORK/MPX-dashboard/data'
+folder = '../data'
 cases = cached_read_parquet(os.path.join(folder,'cases.parquet'))
 sus_cases = cached_read_parquet(os.path.join(folder,'sus_cases.parquet'))
 deaths = cached_read_parquet(os.path.join(folder,'deaths.parquet'))
