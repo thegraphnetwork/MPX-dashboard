@@ -6,5 +6,5 @@ services:
       - "8501:8501"
     volumes:
        # Mounting this file allows updates to the webpage without restarting the container
-      - ./:/app/
+      - ./mpx_dashboard:/mpx_dashboard
 
